@@ -1,3 +1,4 @@
+mod circuit_breaker;
 mod cmd;
 mod config;
 mod db;
@@ -5,11 +6,13 @@ mod indicators;
 mod jquants;
 mod llm;
 mod output;
+mod portfolio;
 mod spec;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use output::OutputFormat;
+use rust_decimal::Decimal;
 
 #[derive(Parser)]
 #[command(name = "kktd", about = "JP stock investment CLI")]
@@ -30,20 +33,23 @@ enum Command {
         #[arg(long, default_value = "60")]
         days: u32,
     },
+    /// Gather latest information for stocks via LLM (Gemini)
+    Fetch {
+        /// Specific tickers to fetch (default: all watchlist)
+        #[arg()]
+        tickers: Vec<String>,
+    },
     /// Run investment evaluation (Buy/Hold/Avoid) via LLM
     Eval {
         /// Specific tickers to evaluate (default: all watchlist)
         #[arg()]
         tickers: Vec<String>,
     },
-    /// Manage watchlist
-    #[command(subcommand)]
-    Watchlist(WatchlistCommand),
-    /// Gather latest information for stocks via LLM (Gemini)
-    Fetch {
-        /// Specific tickers to fetch (default: all watchlist)
-        #[arg()]
-        tickers: Vec<String>,
+    /// Execute trades based on today's evaluations
+    Execute {
+        /// Dry run (don't actually place orders)
+        #[arg(long, default_value = "true")]
+        dry_run: bool,
     },
     /// Generate investment report as Markdown
     Report {
@@ -54,6 +60,12 @@ enum Command {
         #[arg(long, short)]
         output: Option<String>,
     },
+    /// Manage watchlist
+    #[command(subcommand)]
+    Watchlist(WatchlistCommand),
+    /// Manage portfolio positions
+    #[command(subcommand)]
+    Portfolio(PortfolioCommand),
     /// List past evaluations
     History {
         /// Number of evaluations to show
@@ -76,6 +88,39 @@ enum WatchlistCommand {
     List,
 }
 
+#[derive(Subcommand)]
+enum PortfolioCommand {
+    /// Record a buy
+    Buy {
+        ticker: String,
+        #[arg(long)]
+        quantity: Decimal,
+        #[arg(long)]
+        price: Decimal,
+        #[arg(long)]
+        strategy: Option<String>,
+    },
+    /// Record a sell
+    Sell {
+        ticker: String,
+        #[arg(long)]
+        quantity: Decimal,
+        #[arg(long)]
+        price: Decimal,
+        #[arg(long)]
+        strategy: Option<String>,
+    },
+    /// List active positions
+    Positions,
+    /// Portfolio summary
+    Summary,
+    /// Trade history
+    Trades {
+        #[arg(long, default_value = "20")]
+        limit: i64,
+    },
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -96,13 +141,17 @@ async fn main() -> Result<()> {
             let results = cmd::scan::run(&conn, &config, days).await?;
             output::print_list_output(&results, cli.format);
         }
+        Command::Fetch { tickers } => {
+            let results = cmd::fetch::run(&conn, &config, &tickers).await?;
+            output::print_list_output(&results, cli.format);
+        }
         Command::Eval { tickers } => {
             let results = cmd::eval::run(&conn, &config, &tickers).await?;
             output::print_list_output(&results, cli.format);
         }
-        Command::Fetch { tickers } => {
-            let results = cmd::fetch::run(&conn, &config, &tickers).await?;
-            output::print_list_output(&results, cli.format);
+        Command::Execute { dry_run } => {
+            let result = cmd::execute::run(&conn, &config, dry_run).await?;
+            output::print_output(&result, cli.format);
         }
         Command::Report { date, output: out } => {
             let md = cmd::report::run(&conn, date.as_deref()).await?;
@@ -125,6 +174,38 @@ async fn main() -> Result<()> {
             WatchlistCommand::List => {
                 let items = cmd::watchlist::list(&conn).await?;
                 output::print_list_output(&items, cli.format);
+            }
+        },
+        Command::Portfolio(sub) => match sub {
+            PortfolioCommand::Buy {
+                ticker,
+                quantity,
+                price,
+                strategy,
+            } => {
+                portfolio::buy(&conn, &ticker, quantity, price, strategy.as_deref()).await?;
+                eprintln!("Recorded buy: {} x {} @ {}", ticker, quantity, price);
+            }
+            PortfolioCommand::Sell {
+                ticker,
+                quantity,
+                price,
+                strategy,
+            } => {
+                portfolio::sell(&conn, &ticker, quantity, price, strategy.as_deref()).await?;
+                eprintln!("Recorded sell: {} x {} @ {}", ticker, quantity, price);
+            }
+            PortfolioCommand::Positions => {
+                let positions = portfolio::list_positions(&conn).await?;
+                output::print_list_output(&positions, cli.format);
+            }
+            PortfolioCommand::Summary => {
+                let sum = portfolio::summary(&conn).await?;
+                output::print_output(&sum, cli.format);
+            }
+            PortfolioCommand::Trades { limit } => {
+                let trades = portfolio::trade_history(&conn, limit).await?;
+                output::print_list_output(&trades, cli.format);
             }
         },
         Command::History { limit } => {

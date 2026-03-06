@@ -65,10 +65,41 @@ CREATE TABLE IF NOT EXISTS fetch_results (
 );
 ";
 
+pub const CREATE_PORTFOLIO_POSITIONS_TABLE: &str = "
+CREATE TABLE IF NOT EXISTS portfolio_positions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    stock_id INTEGER NOT NULL REFERENCES stocks(id) UNIQUE,
+    quantity TEXT NOT NULL,
+    avg_cost TEXT NOT NULL,
+    total_invested TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    opened_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+";
+
+pub const CREATE_TRADES_TABLE: &str = "
+CREATE TABLE IF NOT EXISTS trades (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    stock_id INTEGER NOT NULL REFERENCES stocks(id),
+    side TEXT NOT NULL CHECK(side IN ('buy', 'sell')),
+    date TEXT NOT NULL,
+    price TEXT NOT NULL,
+    quantity TEXT NOT NULL,
+    pnl TEXT,
+    strategy TEXT,
+    order_type TEXT,
+    stop_loss_price TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+";
+
 pub const ALL_SCHEMAS: &[&str] = &[
     CREATE_STOCKS_TABLE,
     CREATE_PRICES_TABLE,
     CREATE_WATCHLIST_TABLE,
     CREATE_EVALUATIONS_TABLE,
     CREATE_FETCH_RESULTS_TABLE,
+    CREATE_PORTFOLIO_POSITIONS_TABLE,
+    CREATE_TRADES_TABLE,
 ];

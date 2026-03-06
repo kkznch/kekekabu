@@ -98,3 +98,64 @@ impl HumanDisplay for crate::db::Evaluation {
         println!("  {}", self.rationale);
     }
 }
+
+impl HumanDisplay for crate::cmd::execute::ExecuteResult {
+    fn print_human(&self) {
+        if self.circuit_breaker_triggered {
+            println!("!! CIRCUIT BREAKER TRIGGERED !!");
+            for reason in &self.circuit_breaker_reasons {
+                println!("  - {}", reason);
+            }
+            return;
+        }
+        if self.actions.is_empty() {
+            println!("No actions to execute.");
+        }
+        for a in &self.actions {
+            println!("[{}] {} ({}) - {}", a.action, a.ticker, a.name, a.detail);
+        }
+    }
+}
+
+impl HumanDisplay for crate::portfolio::PositionView {
+    fn print_human(&self) {
+        println!(
+            "{:<10} {:<20} qty:{} avg:{} pnl:{}",
+            self.ticker,
+            self.name,
+            self.quantity,
+            self.avg_cost,
+            self.unrealized_pnl
+                .map(|p| format!("{}", p))
+                .unwrap_or_else(|| "-".to_string())
+        );
+    }
+}
+
+impl HumanDisplay for crate::portfolio::PortfolioSummary {
+    fn print_human(&self) {
+        println!("Positions: {}", self.position_count);
+        println!("Invested:  {}", self.total_invested);
+        println!("Value:     {}", self.total_current_value);
+        println!("P&L:       {}", self.total_unrealized_pnl);
+        if let Some(pct) = self.total_unrealized_pnl_pct {
+            println!("P&L %:     {}%", pct);
+        }
+    }
+}
+
+impl HumanDisplay for crate::portfolio::TradeRecord {
+    fn print_human(&self) {
+        println!(
+            "{:<10} {:<5} {} x {} @ {} {}",
+            self.ticker,
+            self.side,
+            self.date,
+            self.quantity,
+            self.price,
+            self.pnl
+                .map(|p| format!("P&L: {}", p))
+                .unwrap_or_default()
+        );
+    }
+}

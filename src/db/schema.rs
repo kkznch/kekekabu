@@ -50,9 +50,25 @@ CREATE TABLE IF NOT EXISTS evaluations (
 );
 ";
 
+pub const CREATE_FETCH_RESULTS_TABLE: &str = "
+CREATE TABLE IF NOT EXISTS fetch_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    stock_id INTEGER NOT NULL REFERENCES stocks(id),
+    source TEXT NOT NULL,
+    category TEXT NOT NULL CHECK(category IN ('news', 'disclosure', 'sentiment', 'competitor', 'other')),
+    title TEXT NOT NULL,
+    url TEXT,
+    body TEXT,
+    published_at TEXT,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(stock_id, url)
+);
+";
+
 pub const ALL_SCHEMAS: &[&str] = &[
     CREATE_STOCKS_TABLE,
     CREATE_PRICES_TABLE,
     CREATE_WATCHLIST_TABLE,
     CREATE_EVALUATIONS_TABLE,
+    CREATE_FETCH_RESULTS_TABLE,
 ];

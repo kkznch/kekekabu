@@ -5,3 +5,4 @@ pub mod indicators;
 pub mod jquants;
 pub mod llm;
 pub mod output;
+pub mod spec;

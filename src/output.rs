@@ -80,6 +80,15 @@ impl HumanDisplay for crate::cmd::eval::EvalResult {
     }
 }
 
+impl HumanDisplay for crate::cmd::fetch::FetchSummary {
+    fn print_human(&self) {
+        println!(
+            "{:<10} {:<20} {} items saved",
+            self.ticker, self.name, self.items_saved
+        );
+    }
+}
+
 impl HumanDisplay for crate::db::Evaluation {
     fn print_human(&self) {
         println!(

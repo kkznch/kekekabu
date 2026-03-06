@@ -341,3 +341,112 @@ pub async fn get_stock_id(conn: &Connection, ticker: &str) -> Result<Option<i64>
     .await
     .context("Failed to lookup stock")
 }
+
+// -- Fetch results operations --
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FetchResult {
+    pub id: i64,
+    pub stock_id: i64,
+    pub ticker: String,
+    pub source: String,
+    pub category: String,
+    pub title: String,
+    pub url: Option<String>,
+    pub body: Option<String>,
+    pub published_at: Option<String>,
+    pub fetched_at: String,
+}
+
+pub async fn save_fetch_result(
+    conn: &Connection,
+    stock_id: i64,
+    source: &str,
+    category: &str,
+    title: &str,
+    url: Option<&str>,
+    body: Option<&str>,
+    published_at: Option<&str>,
+) -> Result<i64> {
+    let source = source.to_string();
+    let category = category.to_string();
+    let title = title.to_string();
+    let url = url.map(|s| s.to_string());
+    let body = body.map(|s| s.to_string());
+    let published_at = published_at.map(|s| s.to_string());
+
+    conn.call(move |conn| {
+        conn.execute(
+            "INSERT OR IGNORE INTO fetch_results (stock_id, source, category, title, url, body, published_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![stock_id, source, category, title, url, body, published_at],
+        )?;
+        Ok::<i64, rusqlite::Error>(conn.last_insert_rowid())
+    })
+    .await
+    .context("Failed to save fetch result")
+}
+
+pub async fn get_fetch_results_for_stock(
+    conn: &Connection,
+    stock_id: i64,
+) -> Result<Vec<FetchResult>> {
+    conn.call(move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT fr.id, fr.stock_id, s.ticker, fr.source, fr.category, fr.title, fr.url, fr.body, fr.published_at, fr.fetched_at
+             FROM fetch_results fr
+             JOIN stocks s ON s.id = fr.stock_id
+             WHERE fr.stock_id = ?1
+             ORDER BY fr.fetched_at DESC",
+        )?;
+        let rows = stmt
+            .query_map([stock_id], |row| {
+                Ok(FetchResult {
+                    id: row.get(0)?,
+                    stock_id: row.get(1)?,
+                    ticker: row.get(2)?,
+                    source: row.get(3)?,
+                    category: row.get(4)?,
+                    title: row.get(5)?,
+                    url: row.get(6)?,
+                    body: row.get(7)?,
+                    published_at: row.get(8)?,
+                    fetched_at: row.get(9)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok::<Vec<FetchResult>, rusqlite::Error>(rows)
+    })
+    .await
+    .context("Failed to get fetch results")
+}
+
+pub async fn get_latest_evaluations_for_today(conn: &Connection) -> Result<Vec<Evaluation>> {
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    conn.call(move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT e.id, s.ticker, s.name, e.decision, e.score, e.rationale, e.ta_summary, e.evaluated_at
+             FROM evaluations e
+             JOIN stocks s ON s.id = e.stock_id
+             WHERE e.evaluated_at >= ?1
+             ORDER BY e.score DESC",
+        )?;
+        let rows = stmt
+            .query_map([today], |row| {
+                Ok(Evaluation {
+                    id: row.get(0)?,
+                    ticker: row.get(1)?,
+                    name: row.get(2)?,
+                    decision: row.get(3)?,
+                    score: row.get(4)?,
+                    rationale: row.get(5)?,
+                    ta_summary: row.get(6)?,
+                    evaluated_at: row.get(7)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok::<Vec<Evaluation>, rusqlite::Error>(rows)
+    })
+    .await
+    .context("Failed to get today's evaluations")
+}

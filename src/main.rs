@@ -5,6 +5,7 @@ mod indicators;
 mod jquants;
 mod llm;
 mod output;
+mod spec;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -38,6 +39,21 @@ enum Command {
     /// Manage watchlist
     #[command(subcommand)]
     Watchlist(WatchlistCommand),
+    /// Gather latest information for stocks via LLM (Gemini)
+    Fetch {
+        /// Specific tickers to fetch (default: all watchlist)
+        #[arg()]
+        tickers: Vec<String>,
+    },
+    /// Generate investment report as Markdown
+    Report {
+        /// Date filter (YYYY-MM-DD, default: today)
+        #[arg(long)]
+        date: Option<String>,
+        /// Output file path (default: stdout)
+        #[arg(long, short)]
+        output: Option<String>,
+    },
     /// List past evaluations
     History {
         /// Number of evaluations to show
@@ -83,6 +99,19 @@ async fn main() -> Result<()> {
         Command::Eval { tickers } => {
             let results = cmd::eval::run(&conn, &config, &tickers).await?;
             output::print_list_output(&results, cli.format);
+        }
+        Command::Fetch { tickers } => {
+            let results = cmd::fetch::run(&conn, &config, &tickers).await?;
+            output::print_list_output(&results, cli.format);
+        }
+        Command::Report { date, output: out } => {
+            let md = cmd::report::run(&conn, date.as_deref()).await?;
+            if let Some(path) = out {
+                std::fs::write(&path, &md)?;
+                eprintln!("Report written to {}", path);
+            } else {
+                print!("{}", md);
+            }
         }
         Command::Watchlist(sub) => match sub {
             WatchlistCommand::Add { ticker, notes } => {

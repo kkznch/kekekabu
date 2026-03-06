@@ -7,6 +7,7 @@ use crate::config::AppConfig;
 use crate::db;
 use crate::indicators;
 use crate::llm;
+use crate::spec;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EvalResponse {
@@ -55,6 +56,12 @@ pub async fn run(
         anyhow::bail!("No stocks to evaluate. Check your watchlist or ticker arguments.");
     }
 
+    // Load spec if available
+    let spec_section = spec::load_spec(&config.spec.path)
+        .ok()
+        .map(|s| s.to_prompt_section());
+    let spec_hash_val = spec::spec_hash(&config.spec.path).ok();
+
     let mut results = Vec::new();
 
     for item in &eval_tickers {
@@ -90,7 +97,30 @@ pub async fn run(
             ta.signals.join(", ")
         };
 
-        let prompt = build_eval_prompt(&item.ticker, &item.name, &ta_json, &signals_str);
+        // Get fetch results if available
+        let fetch_results = db::get_fetch_results_for_stock(conn, stock_id).await?;
+        let fetch_section = if fetch_results.is_empty() {
+            "No recent information available.".to_string()
+        } else {
+            let mut s = String::new();
+            for fr in fetch_results.iter().take(10) {
+                s.push_str(&format!("- [{}] {}", fr.category, fr.title));
+                if let Some(ref body) = fr.body {
+                    s.push_str(&format!(": {}", body));
+                }
+                s.push('\n');
+            }
+            s
+        };
+
+        let prompt = build_eval_prompt(
+            &item.ticker,
+            &item.name,
+            &ta_json,
+            &signals_str,
+            &fetch_section,
+            spec_section.as_deref(),
+        );
 
         info!(ticker = %item.ticker, backend = %config.llm.eval, "Running evaluation");
 
@@ -104,7 +134,7 @@ pub async fn run(
             eval_response.score,
             &serde_json::to_string(&eval_response.rationale)?,
             Some(&ta_json),
-            None,
+            spec_hash_val.as_deref(),
             Some(&config.llm.eval),
         )
         .await?;
@@ -128,7 +158,16 @@ pub async fn run(
     Ok(results)
 }
 
-fn build_eval_prompt(ticker: &str, name: &str, ta_json: &str, signals: &str) -> String {
+fn build_eval_prompt(
+    ticker: &str,
+    name: &str,
+    ta_json: &str,
+    signals: &str,
+    fetch_info: &str,
+    spec_section: Option<&str>,
+) -> String {
+    let spec_part = spec_section.unwrap_or("No investment spec loaded. Use general best practices.");
+
     format!(
         r#"You are an investment committee evaluating a Japanese stock for potential investment.
 
@@ -142,12 +181,20 @@ fn build_eval_prompt(ticker: &str, name: &str, ta_json: &str, signals: &str) -> 
 ## Detected Signals
 {signals}
 
+## Recent Information
+{fetch_info}
+
+## Investment Policy
+{spec_part}
+
 ## Instructions
 Analyze this stock and provide your evaluation. Consider:
 1. Technical trend (moving averages, momentum)
 2. Volatility (Bollinger Bands, ATR)
 3. Volume patterns
-4. Overall risk/reward
+4. Recent news and market sentiment
+5. Investment policy constraints
+6. Overall risk/reward
 
 Respond ONLY with a JSON object in this exact format (no markdown, no code blocks):
 {{

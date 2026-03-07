@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+評価結果からの Markdown レポート生成。Buy/Hold/Avoid カテゴリ別に集約。
+
+## Requirements
 
 ### Requirement: Report generates Markdown from evaluations
 The system SHALL generate a Markdown report from evaluations, grouped by Buy/Hold/Avoid categories.

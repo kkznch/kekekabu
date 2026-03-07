@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+評価結果に基づく売買シグナル出力。サーキットブレーカー確認後に実行。
+
+## Requirements
 
 ### Requirement: Execute processes today's evaluations
 The system SHALL process today's evaluations and generate buy/sell signals based on decision and score.

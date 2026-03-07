@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+TOML 設定ファイルと環境変数によるアプリケーション設定管理、および init コマンドによる初期設定生成。
+
+## Requirements
 
 ### Requirement: Config file at ~/.config/kktd/config.toml
 The system SHALL load configuration from `~/.config/kktd/config.toml` with sections: [api], [llm], [spec], [output].

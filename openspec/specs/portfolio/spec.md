@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+ポートフォリオ管理。売買記録、加重平均コスト計算、P&L 算出、ポジション追跡。
+
+## Requirements
 
 ### Requirement: Record buy transactions
 The system SHALL record buy transactions and update portfolio positions with weighted average cost.

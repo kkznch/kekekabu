@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+SQLite による永続化層。7 テーブル、冪等書き込み、rust_decimal による金額精度保証。
+
+## Requirements
 
 ### Requirement: SQLite database with 7 tables
 The system SHALL use SQLite (tokio-rusqlite, bundled) with 7 tables: stocks, prices, watchlist, evaluations, fetch_results, portfolio_positions, trades.

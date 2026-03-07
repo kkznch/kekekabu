@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+LLM を使った銘柄情報収集（ニュース、開示、センチメント、競合分析）。
+
+## Requirements
 
 ### Requirement: Fetch gathers stock information via LLM
 The system SHALL use the configured fetch LLM backend to gather latest information (news, disclosures, sentiment, competitor analysis) for watchlist stocks.

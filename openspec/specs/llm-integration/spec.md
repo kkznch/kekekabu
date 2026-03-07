@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+LLM バックエンド抽象化。4 バックエンド（api-anthropic, api-gemini, cli-claude, cli-gemini）の統一インターフェース。
+
+## Requirements
 
 ### Requirement: LLM backend abstraction
 The system SHALL provide a `LlmBackend` trait with a `send_message(prompt, max_tokens)` method that all backends implement.

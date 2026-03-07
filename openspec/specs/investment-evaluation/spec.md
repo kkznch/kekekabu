@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+LLM による投資判断生成（Buy/Hold/Avoid）。TA 指標・収集情報・投資 Spec を統合したプロンプトで評価。
+
+## Requirements
 
 ### Requirement: Eval generates investment judgments via LLM
 The system SHALL build a comprehensive prompt with TA indicators, fetch results, and investment Spec, then send it to the eval LLM backend for investment judgment.

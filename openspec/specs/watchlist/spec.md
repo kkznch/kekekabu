@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+監視銘柄の管理（追加・削除・一覧）。パイプラインの対象銘柄を定義。
+
+## Requirements
 
 ### Requirement: Add stock to watchlist
 The system SHALL allow adding a stock to the watchlist by ticker code.

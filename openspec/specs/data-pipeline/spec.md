@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+J-Quants V2 API からの価格データ取得、テクニカル指標算出、トレーディングシグナル検出。
+
+## Requirements
 
 ### Requirement: Scan fetches price data from J-Quants V2 API
 The system SHALL fetch daily OHLCV price data from J-Quants V2 API for all watchlist stocks when `kktd scan` is executed.

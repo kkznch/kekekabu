@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+サーキットブレーカーによる安全制御。異常相場での自動売買ブロック。
+
+## Requirements
 
 ### Requirement: Circuit breaker blocks execute on abnormal individual stock moves
 The system SHALL block trade execution when any watchlist stock has moved more than 30% in a single day.

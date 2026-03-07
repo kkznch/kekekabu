@@ -20,7 +20,7 @@ src/
   output.rs          JSON (default) / human output formatting
   portfolio.rs       Portfolio management (buy/sell, weighted avg cost, P&L)
   circuit_breaker.rs Safety checks (abnormal price moves, market-wide crash)
-  spec.rs            Investment Spec YAML loader + SHA256 hashing
+  spec.rs            Investment Spec TOML loader + SHA256 hashing
   db/
     mod.rs           SQLite operations (7 tables)
     schema.rs        Table definitions
@@ -107,7 +107,7 @@ fetch = "cli-gemini"
 eval = "cli-claude"
 
 [spec]
-path = "specs/jp-core-value-quality-v1.yaml"
+path = "specs/jp-core-value-quality-v1.toml"
 ```
 
 Environment variables override config: `JQUANTS_API_KEY`, `ANTHROPIC_API_KEY`.

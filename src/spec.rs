@@ -78,8 +78,8 @@ pub fn load_spec(path: &str) -> Result<InvestmentSpec> {
     let path = resolve_spec_path(path);
     let content = std::fs::read_to_string(&path)
         .with_context(|| format!("Failed to read spec file: {}", path.display()))?;
-    serde_yaml::from_str(&content)
-        .with_context(|| format!("Failed to parse spec YAML: {}", path.display()))
+    toml::from_str(&content)
+        .with_context(|| format!("Failed to parse spec TOML: {}", path.display()))
 }
 
 pub fn spec_hash(path: &str) -> Result<String> {
@@ -137,27 +137,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_spec_yaml() {
-        let yaml = r#"
-name: "Test Strategy"
-version: "1.0"
-universe:
-  min_market_cap: 50000000000
-  min_daily_volume: 200000
-scoring:
-  factors:
-    - name: "PBR"
-      weight: 0.3
-      description: "Price to Book Ratio"
-    - name: "ROE"
-      weight: 0.3
-      description: "Return on Equity"
-execution:
-  max_position_size: 0.05
-  stop_loss: -0.07
-  trailing_stop: 0.15
+    fn test_parse_spec_toml() {
+        let toml_str = r#"
+name = "Test Strategy"
+version = "1.0"
+
+[universe]
+min_market_cap = 50000000000.0
+min_daily_volume = 200000.0
+
+[[scoring.factors]]
+name = "PBR"
+weight = 0.3
+description = "Price to Book Ratio"
+
+[[scoring.factors]]
+name = "ROE"
+weight = 0.3
+description = "Return on Equity"
+
+[execution]
+max_position_size = 0.05
+stop_loss = -0.07
+trailing_stop = 0.15
 "#;
-        let spec: InvestmentSpec = serde_yaml::from_str(yaml).unwrap();
+        let spec: InvestmentSpec = toml::from_str(toml_str).unwrap();
         assert_eq!(spec.name, "Test Strategy");
         assert_eq!(spec.scoring.factors.len(), 2);
         assert!((spec.execution.stop_loss - (-0.07)).abs() < 0.001);

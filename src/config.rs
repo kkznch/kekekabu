@@ -65,7 +65,7 @@ impl Default for SpecConfig {
 
 impl SpecConfig {
     fn default_path() -> String {
-        "specs/template.yaml".to_string()
+        "specs/template.toml".to_string()
     }
 }
 
@@ -101,8 +101,8 @@ eval = "cli-claude"
 # fetch_model = ""
 
 [spec]
-# Investment spec YAML file path (relative to config dir or absolute)
-path = "specs/template.yaml"
+# Investment spec file path (relative to config dir or absolute)
+path = "specs/template.toml"
 
 [output]
 # Default output format (json or human)
@@ -112,47 +112,54 @@ default_format = "json"
 const SPEC_TEMPLATE: &str = r#"# Investment Spec: JP Core Value & Quality
 # This file defines the investment strategy for kabu eval.
 
-name: "JP Core Value & Quality"
-version: "1.0"
+name = "JP Core Value & Quality"
+version = "1.0"
 
-universe:
-  # Minimum market cap (JPY)
-  min_market_cap: 10000000000   # 100 億円
-  # Minimum average daily trading volume (shares)
-  min_daily_volume: 100000
+[universe]
+# Minimum market cap (JPY) — 100 億円
+min_market_cap = 10_000_000_000.0
+# Minimum average daily trading volume (shares)
+min_daily_volume = 100_000.0
 
-scoring:
-  factors:
-    - name: "PBR"
-      weight: 0.2
-      description: "Price to Book Ratio. Lower is better (value)."
-    - name: "PER"
-      weight: 0.2
-      description: "Price to Earnings Ratio. Lower is better (value)."
-    - name: "ROE"
-      weight: 0.25
-      description: "Return on Equity. Higher is better (quality)."
-    - name: "Dividend Yield"
-      weight: 0.15
-      description: "Annual dividend yield. Higher is better (income)."
-    - name: "Technical Momentum"
-      weight: 0.2
-      description: "RSI, MACD, moving average trends."
+[[scoring.factors]]
+name = "PBR"
+weight = 0.2
+description = "Price to Book Ratio. Lower is better (value)."
 
-execution:
-  # Max position size as fraction of total portfolio
-  max_position_size: 0.05       # 5%
-  # Stop loss trigger (negative = loss)
-  stop_loss: -0.07              # -7%
-  # Trailing stop from high water mark
-  trailing_stop: 0.15           # 15%
+[[scoring.factors]]
+name = "PER"
+weight = 0.2
+description = "Price to Earnings Ratio. Lower is better (value)."
+
+[[scoring.factors]]
+name = "ROE"
+weight = 0.25
+description = "Return on Equity. Higher is better (quality)."
+
+[[scoring.factors]]
+name = "Dividend Yield"
+weight = 0.15
+description = "Annual dividend yield. Higher is better (income)."
+
+[[scoring.factors]]
+name = "Technical Momentum"
+weight = 0.2
+description = "RSI, MACD, moving average trends."
+
+[execution]
+# Max position size as fraction of total portfolio (5%)
+max_position_size = 0.05
+# Stop loss trigger (negative = loss, -7%)
+stop_loss = -0.07
+# Trailing stop from high water mark (15%)
+trailing_stop = 0.15
 "#;
 
 pub fn init_config(force: bool) -> Result<()> {
     let dir = config_dir().context("Failed to determine config directory")?;
     let config_path = dir.join("config.toml");
     let spec_dir = dir.join("specs");
-    let spec_path = spec_dir.join("template.yaml");
+    let spec_path = spec_dir.join("template.toml");
 
     if config_path.exists() && !force {
         anyhow::bail!(

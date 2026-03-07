@@ -3,7 +3,7 @@
 - [x] 1.1 AppConfig 構造体（[api], [llm], [spec], [output] セクション）
 - [x] 1.2 ~/.config/kabu/config.toml からの TOML 設定読み込み
 - [x] 1.3 環境変数による上書き（JQUANTS_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY）
-- [x] 1.4 `kabu init` コマンド（config.toml + specs/template.yaml 生成）
+- [x] 1.4 `kabu init` コマンド（config.toml + specs/template.toml 生成）
 - [x] 1.5 `--force` フラグによる設定上書き、テンプレートは常に再生成
 
 ## 2. データベース
@@ -45,7 +45,7 @@
 
 - [x] 6.1 TA 指標 + fetch 結果 + Spec を統合した包括的プロンプト
 - [x] 6.2 JSON 応答パース（decision, score, rationale）
-- [x] 6.3 投資 Spec YAML ローダー（SHA256 ハッシュ付き）
+- [x] 6.3 投資 Spec TOML ローダー（SHA256 ハッシュ付き）
 - [x] 6.4 Spec の to_prompt_section()（eval プロンプトへの埋め込み）
 - [x] 6.5 spec_hash 付き evaluations の永続化
 - [x] 6.6 eval テスト（3テスト）+ Spec テスト（2テスト）

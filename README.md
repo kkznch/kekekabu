@@ -43,7 +43,7 @@ just build
 
 # 設定ファイルの初期化
 cargo run -- init
-# → ~/.config/kabu/config.toml と specs/template.yaml が生成される
+# → ~/.config/kabu/config.toml と specs/template.toml が生成される
 ```
 
 `~/.config/kabu/config.toml` を編集して設定してください。
@@ -73,9 +73,9 @@ cargo run -- init
 
 | キー | デフォルト | 説明 |
 |------|-----------|------|
-| `path` | `specs/template.yaml` | 投資戦略 YAML ファイルのパス（config ディレクトリからの相対パスまたは絶対パス） |
+| `path` | `specs/template.toml` | 投資戦略ファイルのパス（config ディレクトリからの相対パスまたは絶対パス） |
 
-`kabu init` で生成される `template.yaml` をコピーして独自の戦略ファイルを作成し、ここで指定します。
+`kabu init` で生成される `template.toml` をコピーして独自の戦略ファイルを作成し、ここで指定します。
 
 ### `[output]` — 出力設定
 
@@ -94,7 +94,7 @@ fetch = "cli-gemini"
 eval = "cli-claude"
 
 [spec]
-path = "specs/my-strategy.yaml"
+path = "specs/my-strategy.toml"
 
 [output]
 default_format = "json"
@@ -166,4 +166,4 @@ just --list         # タスク一覧
 
 - **サーキットブレーカー**: 個別銘柄 >30% 変動、またはウォッチリストの >50% が >5% 下落した場合に execute をブロック
 - **ドライラン**: `execute --dry-run` がデフォルト
-- **投資 Spec**: YAML で戦略パラメータを外部管理、SHA256 ハッシュで評価時の Spec を追跡
+- **投資 Spec**: TOML で戦略パラメータを外部管理、SHA256 ハッシュで評価時の Spec を追跡

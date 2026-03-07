@@ -13,7 +13,7 @@ TOML 設定ファイルと環境変数によるアプリケーション設定管
 
 #### Scenario: 設定ファイルが存在しない場合
 - **WHEN** config.toml が存在しない場合
-- **THEN** デフォルト値を使用する（fetch=cli-gemini, eval=cli-claude, spec=specs/template.yaml, format=json）
+- **THEN** デフォルト値を使用する（fetch=cli-gemini, eval=cli-claude, spec=specs/template.toml, format=json）
 
 ### Requirement: 環境変数による設定の上書き
 システムは SHALL JQUANTS_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY の環境変数で設定値を上書きできる。
@@ -27,11 +27,11 @@ TOML 設定ファイルと環境変数によるアプリケーション設定管
 - **THEN** 環境変数を無視し config.toml の値を使用する
 
 ### Requirement: init コマンドで設定と Spec テンプレートを生成
-システムは SHALL `kabu init` 実行時に config.toml と specs/template.yaml を生成する。
+システムは SHALL `kabu init` 実行時に config.toml と specs/template.toml を生成する。
 
 #### Scenario: 初回の init
 - **WHEN** 既存の設定がない状態で `kabu init` を実行した場合
-- **THEN** API キーのプレースホルダー付き config.toml と specs/template.yaml を作成する
+- **THEN** API キーのプレースホルダー付き config.toml と specs/template.toml を作成する
 
 #### Scenario: 既存設定がある場合
 - **WHEN** 既存の config.toml がある状態で `kabu init` を実行した場合
@@ -39,11 +39,11 @@ TOML 設定ファイルと環境変数によるアプリケーション設定管
 
 #### Scenario: 強制上書き
 - **WHEN** `kabu init --force` を実行した場合
-- **THEN** config.toml を上書きし specs/template.yaml を再生成する
+- **THEN** config.toml を上書きし specs/template.toml を再生成する
 
 ### Requirement: Spec テンプレートは常に上書き
-システムは SHALL init 時に `specs/template.yaml` を常に上書きする。ユーザーのカスタム戦略は別ファイルで管理する想定。
+システムは SHALL init 時に `specs/template.toml` を常に上書きする。ユーザーのカスタム戦略は別ファイルで管理する想定。
 
 #### Scenario: テンプレートの再生成
 - **WHEN** `kabu init`（または `--force`）を実行した場合
-- **THEN** template.yaml の存在有無にかかわらず最新版を書き出す
+- **THEN** template.toml の存在有無にかかわらず最新版を書き出す

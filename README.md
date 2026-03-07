@@ -17,6 +17,28 @@ discover → scan → fetch → eval → execute → report
 | `execute` | サーキットブレーカー確認後、売買シグナルを出力 |
 | `report` | 評価結果を Markdown レポートとして出力 |
 
+### 判断フロー
+
+```
+discover: LLM が watchlist を管理（keep / add / remove）
+    ↓
+scan: watchlist の銘柄の価格データ + テクニカル指標を取得
+    ↓
+fetch: watchlist の銘柄の最新情報を収集
+    ↓
+eval: 銘柄を評価し、売買判断を生成
+    │
+    ├─ watchlist にある & 未保有 → NewTarget → Buy / Avoid
+    ├─ watchlist にある & 保有中 → ExistingHolding → Hold / Sell
+    └─ watchlist にない & 保有中 → ExistingHolding → Hold / Sell
+    ↓
+execute: サーキットブレーカー確認後、売買シグナルを出力
+    ↓
+report: 評価結果を Markdown レポートに出力
+```
+
+> **ポイント**: watchlist から外れても、ポートフォリオに保有がある限り eval の対象になり続けます（Hold/Sell 判断）。watchlist からの除外は売りの直接トリガーではありません。
+
 ### 依存関係マトリクス
 
 | コマンド | DB | LLM | 外部 API |

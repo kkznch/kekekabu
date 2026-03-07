@@ -6,6 +6,7 @@ use tracing::{info, warn};
 use crate::circuit_breaker;
 use crate::config::AppConfig;
 use crate::db;
+use crate::portfolio;
 
 #[derive(Debug, Serialize)]
 pub struct ExecuteResult {
@@ -51,43 +52,53 @@ pub async fn run(
         });
     }
 
+    // 3. Get positions for Sell checks
+    let positions = portfolio::list_positions(conn).await?;
+    let held_tickers: std::collections::HashSet<String> =
+        positions.iter().map(|p| p.ticker.clone()).collect();
+
     let mut actions = Vec::new();
 
     for eval in &evals {
-        let action = match eval.decision.as_str() {
+        let (action_type, detail) = match eval.decision.as_str() {
             "Buy" if eval.score >= 70 => {
-                if dry_run {
+                let detail = if dry_run {
                     format!("[DRY RUN] Would place buy order for {} (score: {})", eval.ticker, eval.score)
                 } else {
-                    // TODO: Phase 3 full implementation would call Tachibana API here
-                    // For now, we log the intent
                     format!(
                         "Buy signal recorded for {} (score: {}). Tachibana API integration pending.",
                         eval.ticker, eval.score
                     )
-                }
+                };
+                ("buy_signal", detail)
             }
             "Buy" => {
-                format!("Buy signal for {} but score too low ({} < 70), skipping", eval.ticker, eval.score)
+                ("hold", format!("Buy signal for {} but score too low ({} < 70), skipping", eval.ticker, eval.score))
+            }
+            "Sell" => {
+                if held_tickers.contains(&eval.ticker) {
+                    let detail = if dry_run {
+                        format!("[DRY RUN] Would place sell order for {} (score: {})", eval.ticker, eval.score)
+                    } else {
+                        format!(
+                            "Sell signal recorded for {} (score: {}). Tachibana API integration pending.",
+                            eval.ticker, eval.score
+                        )
+                    };
+                    ("sell_signal", detail)
+                } else {
+                    ("hold", format!("Sell signal for {} but no position held, skipping", eval.ticker))
+                }
             }
             "Avoid" if eval.score <= 30 => {
-                // Check if we have a position to consider selling
-                format!(
+                ("sell_signal", format!(
                     "Avoid signal for {} (score: {}). Review existing positions.",
                     eval.ticker, eval.score
-                )
+                ))
             }
             _ => {
-                format!("Hold for {} (score: {})", eval.ticker, eval.score)
+                ("hold", format!("Hold for {} (score: {})", eval.ticker, eval.score))
             }
-        };
-
-        let action_type = if eval.decision == "Buy" && eval.score >= 70 {
-            "buy_signal"
-        } else if eval.decision == "Avoid" && eval.score <= 30 {
-            "sell_signal"
-        } else {
-            "hold"
         };
 
         actions.push(ExecuteAction {
@@ -96,7 +107,7 @@ pub async fn run(
             decision: eval.decision.clone(),
             score: eval.score,
             action: action_type.to_string(),
-            detail: action,
+            detail,
         });
     }
 

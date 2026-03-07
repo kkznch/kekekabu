@@ -5,14 +5,15 @@
 ## パイプライン
 
 ```
-scan → fetch → eval → execute → report
+discover → scan → fetch → eval → execute → report
 ```
 
 | コマンド | 概要 |
 |---------|------|
+| `discover` | LLM で投資 Spec に基づく有望銘柄を発掘し、watchlist を自動管理 |
 | `scan` | J-Quants API から価格データを取得し、テクニカル指標（RSI, MACD, BB, SMA 等）を算出 |
 | `fetch` | LLM で最新ニュース・開示・センチメント等の情報を収集 |
-| `eval` | LLM（Claude / Gemini）で投資判断（Buy / Hold / Avoid）を生成 |
+| `eval` | LLM で投資判断を生成。新規候補は Buy/Avoid、保有中は Hold/Sell |
 | `execute` | サーキットブレーカー確認後、売買シグナルを出力 |
 | `report` | 評価結果を Markdown レポートとして出力 |
 
@@ -25,7 +26,6 @@ scan → fetch → eval → execute → report
 | `eval` | R/W | ✓ | - |
 | `execute` | R | - | - |
 | `report` | R | - | - |
-| `watchlist` | R/W | - | - |
 | `portfolio` | R/W | - | - |
 | `history` | R | - | - |
 | `config init` | - | - | - |
@@ -99,16 +99,15 @@ path = "specs/my-strategy.toml"
 
 ```sh
 # 日次パイプライン
+kabu discover                        # LLM で有望銘柄を発掘・watchlist 更新
 kabu scan --days 60
 kabu fetch
 kabu eval
 kabu execute --dry-run
 kabu report -o report.md
 
-# ウォッチリスト管理
-kabu watchlist add 7203
-kabu watchlist list
-kabu watchlist remove 7203
+# ウォッチリスト確認
+kabu discover --list
 
 # ポートフォリオ管理
 kabu portfolio buy 7203 --quantity 100 --price 2000
@@ -127,8 +126,8 @@ kabu history --limit 20
 ## 自動化（cron / launchd）
 
 ```sh
-# 朝: データ収集 → 評価
-kabu scan --days 60 && kabu fetch && kabu eval
+# 朝: 銘柄発掘 → データ収集 → 評価
+kabu discover && kabu scan --days 60 && kabu fetch && kabu eval
 
 # 市場オープン: 実行
 kabu execute

@@ -148,10 +148,10 @@ fn parse_fetch_response(text: &str) -> Result<Vec<GeminiFetchItem>> {
 
 fn extract_json(text: &str) -> &str {
     let text = text.trim();
-    if let Some(start) = text.find('{') {
-        if let Some(end) = text.rfind('}') {
-            return &text[start..=end];
-        }
+    if let Some(start) = text.find('{')
+        && let Some(end) = text.rfind('}')
+    {
+        return &text[start..=end];
     }
     text
 }

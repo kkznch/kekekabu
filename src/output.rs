@@ -72,11 +72,31 @@ impl HumanDisplay for crate::cmd::scan::ScanResult {
 
 impl HumanDisplay for crate::cmd::eval::EvalResult {
     fn print_human(&self) {
-        println!("--- {} ({}) ---", self.ticker, self.name);
+        println!("--- {} ({}) [{}] ---", self.ticker, self.name, self.status);
         println!("  Decision: {} (Score: {})", self.decision, self.score);
-        println!("  Summary: {}", self.rationale.summary);
-        println!("  Technical: {}", self.rationale.technical);
-        println!("  Risks: {}", self.rationale.risks);
+        println!("  Catalyst: {}", self.analysis.catalyst_check);
+        println!("  Risk: {}", self.analysis.risk_assessment);
+        println!("  Spec: {}", self.analysis.spec_compliance);
+        if !self.execution_instruction.action.is_empty() {
+            println!("  Action: {}", self.execution_instruction.action);
+        }
+        if !self.execution_instruction.reason_for_exit.is_empty() {
+            println!("  Exit Reason: {}", self.execution_instruction.reason_for_exit);
+        }
+    }
+}
+
+impl HumanDisplay for crate::cmd::discover::DiscoverResult {
+    fn print_human(&self) {
+        if !self.added.is_empty() {
+            println!("Added: {}", self.added.join(", "));
+        }
+        if !self.removed.is_empty() {
+            println!("Removed: {}", self.removed.join(", "));
+        }
+        if !self.kept.is_empty() {
+            println!("Kept (held): {}", self.kept.join(", "));
+        }
     }
 }
 

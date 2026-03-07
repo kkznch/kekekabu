@@ -1,8 +1,4 @@
-## Purpose
-
-評価結果に基づく売買シグナル出力。サーキットブレーカーで安全確認後に、decision とスコアから売買アクションを生成する。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: 当日の評価結果を処理
 システムは SHALL 当日の evaluations を処理し、decision とスコアに基づいて売買シグナルを生成する。
@@ -26,21 +22,3 @@
 #### Scenario: Hold アクション
 - **WHEN** evaluation の decision="Hold" または買い/売りの閾値を満たさない場合
 - **THEN** hold アクションを生成する
-
-### Requirement: ドライランのサポート
-システムは SHALL デフォルトでドライランモードとし、アクションに "[DRY RUN]" プレフィックスを付ける。
-
-#### Scenario: ドライランモード
-- **WHEN** `kabu execute --dry-run true` を実行した場合
-- **THEN** 実際の注文を発行せず、"[DRY RUN]" プレフィックス付きでアクションを出力する
-
-### Requirement: 処理前にサーキットブレーカーを確認
-システムは SHALL evaluations の処理前にサーキットブレーカーを確認する。
-
-#### Scenario: サーキットブレーカー発動
-- **WHEN** サーキットブレーカーが危険な市場状況を検知した場合
-- **THEN** `circuit_breaker_triggered: true` と理由一覧を返して execute を中止する
-
-#### Scenario: 当日の評価がない場合
-- **WHEN** 当日の evaluations が存在しない場合
-- **THEN** 空のアクションと情報ログメッセージを返す

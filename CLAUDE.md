@@ -4,7 +4,7 @@
 
 JP stock investment CLI tool (`kabu`). Rust 2024 edition.
 
-5-command pipeline: `scan → fetch → eval → execute → report`
+6-command pipeline: `discover → scan → fetch → eval → execute → report`
 
 All phases implemented. Tachibana Securities API integration is stubbed (pending API access).
 
@@ -30,12 +30,12 @@ src/
     cli_claude.rs    claude -p
     cli_gemini.rs    gemini -p
   cmd/
+    discover.rs      LLM stock discovery + watchlist management
     scan.rs          J-Quants fetch + TA indicators
     fetch.rs         Gemini info gathering (news, disclosure, sentiment)
-    eval.rs          LLM investment evaluation (Buy/Hold/Avoid)
-    execute.rs       Trade execution (circuit breaker + order logic)
+    eval.rs          LLM investment evaluation (Hunting: Buy/Avoid, Farming: Hold/Sell)
+    execute.rs       Trade execution (circuit breaker + Buy/Sell signals)
     report.rs        Markdown report generation
-    watchlist.rs     Watchlist CRUD
     config.rs        Config init + validate handlers
 ```
 
@@ -53,9 +53,11 @@ src/
 
 ```sh
 # Pipeline
+kabu discover                        # LLM stock discovery → watchlist
+kabu discover --list                 # List current watchlist
 kabu scan --days 60                  # Fetch prices + compute TA
 kabu fetch                           # Gather info via Gemini
-kabu eval                            # LLM evaluation (Buy/Hold/Avoid)
+kabu eval                            # LLM evaluation (Hunting + Farming)
 kabu execute --dry-run               # Execute trades (dry run)
 kabu report -o report.md             # Generate Markdown report
 
@@ -65,8 +67,6 @@ kabu config init --force             # Overwrite existing config
 kabu config validate                 # Validate config + spec
 
 # Management
-kabu watchlist add 7203              # Add to watchlist
-kabu watchlist list                  # List watchlist
 kabu portfolio buy 7203 --quantity 100 --price 2000
 kabu portfolio sell 7203 --quantity 50 --price 2200
 kabu portfolio positions             # Active positions
@@ -78,8 +78,8 @@ kabu history --limit 20              # Past evaluations
 ## Automation (cron/launchd)
 
 ```sh
-# Morning: scan → fetch → eval
-kabu scan --days 60 && kabu fetch && kabu eval
+# Morning: discover → scan → fetch → eval
+kabu discover && kabu scan --days 60 && kabu fetch && kabu eval
 
 # Market open: execute
 kabu execute
@@ -122,7 +122,7 @@ Environment variables override config: `JQUANTS_API_KEY`, `ANTHROPIC_API_KEY`.
 
 1. `stocks` — ticker master
 2. `prices` — daily OHLCV
-3. `watchlist` — monitored stocks
+3. `watchlist` — monitored stocks (managed by discover)
 4. `evaluations` — LLM judgments (with spec_hash)
 5. `fetch_results` — gathered information
 6. `portfolio_positions` — active positions (weighted avg cost)

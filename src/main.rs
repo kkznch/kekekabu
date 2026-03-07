@@ -30,6 +30,12 @@ enum Command {
     /// Manage configuration
     #[command(subcommand)]
     Config(ConfigCommand),
+    /// Discover stock candidates via LLM and update watchlist
+    Discover {
+        /// List current watchlist instead of running discovery
+        #[arg(long)]
+        list: bool,
+    },
     /// Fetch price data and compute TA indicators for watchlist stocks
     Scan {
         /// Number of days of historical data to fetch
@@ -63,9 +69,6 @@ enum Command {
         #[arg(long, short)]
         output: Option<String>,
     },
-    /// Manage watchlist
-    #[command(subcommand)]
-    Watchlist(WatchlistCommand),
     /// Manage portfolio positions
     #[command(subcommand)]
     Portfolio(PortfolioCommand),
@@ -75,20 +78,6 @@ enum Command {
         #[arg(long, default_value = "20")]
         limit: i64,
     },
-}
-
-#[derive(Subcommand)]
-enum WatchlistCommand {
-    /// Add a stock to watchlist
-    Add {
-        ticker: String,
-        #[arg(long)]
-        notes: Option<String>,
-    },
-    /// Remove a stock from watchlist
-    Remove { ticker: String },
-    /// List watchlist stocks
-    List,
 }
 
 #[derive(Subcommand)]
@@ -163,6 +152,15 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Command::Config(_) => unreachable!(),
+        Command::Discover { list } => {
+            if list {
+                let items = cmd::discover::list(&conn).await?;
+                output::print_list_output(&items, cli.format);
+            } else {
+                let result = cmd::discover::run(&conn, &config).await?;
+                output::print_output(&result, cli.format);
+            }
+        }
         Command::Scan { days } => {
             let results = cmd::scan::run(&conn, &config, days).await?;
             output::print_list_output(&results, cli.format);
@@ -188,20 +186,6 @@ async fn main() -> Result<()> {
                 print!("{}", md);
             }
         }
-        Command::Watchlist(sub) => match sub {
-            WatchlistCommand::Add { ticker, notes } => {
-                cmd::watchlist::add(&conn, &ticker, notes.as_deref()).await?;
-                eprintln!("Added {} to watchlist", ticker);
-            }
-            WatchlistCommand::Remove { ticker } => {
-                cmd::watchlist::remove(&conn, &ticker).await?;
-                eprintln!("Removed {} from watchlist", ticker);
-            }
-            WatchlistCommand::List => {
-                let items = cmd::watchlist::list(&conn).await?;
-                output::print_list_output(&items, cli.format);
-            }
-        },
         Command::Portfolio(sub) => match sub {
             PortfolioCommand::Buy {
                 ticker,

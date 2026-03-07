@@ -4,8 +4,8 @@ use serde::Deserialize;
 const BASE_URL: &str = "https://api.jquants.com/v2";
 
 #[derive(Debug, Deserialize)]
-struct ListedInfoResponse {
-    info: Vec<ListedInfo>,
+struct EquitiesMasterResponse {
+    data: Vec<ListedInfo>,
 }
 
 #[allow(dead_code)]
@@ -13,15 +13,15 @@ struct ListedInfoResponse {
 pub struct ListedInfo {
     #[serde(rename = "Code")]
     pub code: String,
-    #[serde(rename = "CompanyName")]
+    #[serde(rename = "CoName")]
     pub company_name: String,
-    #[serde(rename = "Sector33CodeName")]
+    #[serde(rename = "S33Nm")]
     pub sector: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-struct DailyQuotesResponse {
-    pub daily_quotes: Vec<DailyQuote>,
+struct EquitiesBarsResponse {
+    data: Vec<DailyQuote>,
 }
 
 #[allow(dead_code)]
@@ -31,17 +31,17 @@ pub struct DailyQuote {
     pub code: String,
     #[serde(rename = "Date")]
     pub date: String,
-    #[serde(rename = "Open")]
+    #[serde(rename = "O")]
     pub open: Option<f64>,
-    #[serde(rename = "High")]
+    #[serde(rename = "H")]
     pub high: Option<f64>,
-    #[serde(rename = "Low")]
+    #[serde(rename = "L")]
     pub low: Option<f64>,
-    #[serde(rename = "Close")]
+    #[serde(rename = "C")]
     pub close: Option<f64>,
-    #[serde(rename = "Volume")]
+    #[serde(rename = "Vo")]
     pub volume: Option<f64>,
-    #[serde(rename = "AdjustmentClose")]
+    #[serde(rename = "AdjC")]
     pub adjustment_close: Option<f64>,
 }
 
@@ -61,24 +61,24 @@ impl JQuantsClient {
     pub async fn get_stock_info(&self, code: &str) -> Result<Option<ListedInfo>> {
         let resp = self
             .http
-            .get(format!("{BASE_URL}/listed/info?code={}", code))
+            .get(format!("{BASE_URL}/equities/master?code={}", code))
             .header("x-api-key", &self.api_key)
             .send()
             .await
-            .context("Failed to request J-Quants listed/info")?;
+            .context("Failed to request J-Quants equities/master")?;
 
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            bail!("J-Quants listed/info failed ({}): {}", status, text);
+            bail!("J-Quants equities/master failed ({}): {}", status, text);
         }
 
-        let data: ListedInfoResponse = resp
+        let data: EquitiesMasterResponse = resp
             .json()
             .await
-            .context("Failed to parse listed info response")?;
+            .context("Failed to parse equities master response")?;
 
-        Ok(data.info.into_iter().next())
+        Ok(data.data.into_iter().next())
     }
 
     pub async fn get_daily_quotes(
@@ -88,7 +88,7 @@ impl JQuantsClient {
         date_to: &str,
     ) -> Result<Vec<DailyQuote>> {
         let url = format!(
-            "{BASE_URL}/prices/daily_quotes?code={}&from={}&to={}",
+            "{BASE_URL}/equities/bars/daily?code={}&from={}&to={}",
             code, date_from, date_to
         );
 
@@ -111,11 +111,11 @@ impl JQuantsClient {
             );
         }
 
-        let data: DailyQuotesResponse = resp
+        let data: EquitiesBarsResponse = resp
             .json()
             .await
             .context("Failed to parse daily quotes response")?;
 
-        Ok(data.daily_quotes)
+        Ok(data.data)
     }
 }

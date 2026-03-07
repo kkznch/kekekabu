@@ -77,6 +77,11 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
     // Add new tickers
     let mut added = Vec::new();
     for candidate in &valid_tickers {
+        // Save company name from LLM response to stocks table
+        if !candidate.name.is_empty() {
+            db::save_stock(conn, &candidate.ticker, &candidate.name, None).await?;
+        }
+
         if !current_tickers.contains(&candidate.ticker) {
             let notes = if candidate.reason.is_empty() {
                 None
@@ -84,7 +89,7 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
                 Some(candidate.reason.as_str())
             };
             db::watchlist_add(conn, &candidate.ticker, notes).await?;
-            info!(ticker = %candidate.ticker, "Added to watchlist");
+            info!(ticker = %candidate.ticker, name = %candidate.name, "Added to watchlist");
             added.push(candidate.ticker.clone());
         }
     }

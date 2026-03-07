@@ -191,6 +191,16 @@ pub fn init_config(force: bool) -> Result<()> {
         );
     }
 
+    // Backup existing config before overwriting
+    if config_path.exists() {
+        let date = chrono::Local::now().format("%Y%m%d-%H%M%S");
+        let backup_name = format!("config.{}.toml", date);
+        let backup_path = dir.join(&backup_name);
+        std::fs::copy(&config_path, &backup_path)
+            .with_context(|| format!("Failed to backup config: {}", config_path.display()))?;
+        eprintln!("Config backed up: {}", backup_path.display());
+    }
+
     // Write config
     let overwritten = config_path.exists();
     std::fs::write(&config_path, CONFIG_TEMPLATE)

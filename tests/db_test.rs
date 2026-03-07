@@ -204,3 +204,44 @@ async fn test_trade_cash_summary_buy_and_sell() -> Result<()> {
     assert!((summary.total_recovered - 110000.0).abs() < 0.01);
     Ok(())
 }
+
+#[tokio::test]
+async fn test_save_watchlist_event() -> Result<()> {
+    let conn = setup_db().await?;
+    kekekabu::db::save_watchlist_event(&conn, "7203", "add", Some("割安銘柄")).await?;
+    kekekabu::db::save_watchlist_event(&conn, "6758", "keep", Some("継続監視")).await?;
+    kekekabu::db::save_watchlist_event(&conn, "9984", "remove", Some("基準外")).await?;
+
+    // Verify events were saved by querying directly
+    let count: i64 = conn
+        .call(|conn| {
+            let count = conn.query_row(
+                "SELECT COUNT(*) FROM watchlist_events",
+                [],
+                |row| row.get(0),
+            )?;
+            Ok::<i64, rusqlite::Error>(count)
+        })
+        .await?;
+    assert_eq!(count, 3);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_save_watchlist_event_without_reason() -> Result<()> {
+    let conn = setup_db().await?;
+    kekekabu::db::save_watchlist_event(&conn, "7203", "add", None).await?;
+
+    let count: i64 = conn
+        .call(|conn| {
+            let count = conn.query_row(
+                "SELECT COUNT(*) FROM watchlist_events WHERE reason IS NULL",
+                [],
+                |row| row.get(0),
+            )?;
+            Ok::<i64, rusqlite::Error>(count)
+        })
+        .await?;
+    assert_eq!(count, 1);
+    Ok(())
+}

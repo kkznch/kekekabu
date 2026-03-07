@@ -453,6 +453,29 @@ pub async fn trade_cash_summary(conn: &Connection) -> Result<TradeCashSummary> {
     .context("Failed to get trade cash summary")
 }
 
+// -- Watchlist events --
+
+pub async fn save_watchlist_event(
+    conn: &Connection,
+    ticker: &str,
+    action: &str,
+    reason: Option<&str>,
+) -> Result<()> {
+    let ticker = ticker.to_string();
+    let action = action.to_string();
+    let reason = reason.map(|s| s.to_string());
+
+    conn.call(move |conn| {
+        conn.execute(
+            "INSERT INTO watchlist_events (ticker, action, reason) VALUES (?1, ?2, ?3)",
+            rusqlite::params![ticker, action, reason],
+        )?;
+        Ok::<(), rusqlite::Error>(())
+    })
+    .await
+    .context("Failed to save watchlist event")
+}
+
 pub async fn get_latest_evaluations_for_today(conn: &Connection) -> Result<Vec<Evaluation>> {
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     conn.call(move |conn| {

@@ -11,11 +11,16 @@ use crate::spec;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct DiscoverResponse {
-    candidates: Vec<DiscoverCandidate>,
+    #[serde(default)]
+    keep: Vec<DiscoverAction>,
+    #[serde(default)]
+    add: Vec<DiscoverAction>,
+    #[serde(default)]
+    remove: Vec<DiscoverAction>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct DiscoverCandidate {
+struct DiscoverAction {
     ticker: String,
     #[serde(default)]
     name: String,
@@ -55,80 +60,89 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
         None
     };
 
-    let prompt = build_discover_prompt(spec_section.as_deref(), budget_context.as_deref());
+    // Build watchlist context from current watchlist
+    let current_watchlist = db::watchlist_list(conn).await?;
+    let watchlist_context = if current_watchlist.is_empty() {
+        None
+    } else {
+        let mut ctx = String::from("## Current Watchlist\n\n");
+        for item in &current_watchlist {
+            ctx.push_str(&format!("- {} ({})\n", item.ticker, item.name));
+        }
+        Some(ctx)
+    };
+
+    let prompt = build_discover_prompt(
+        spec_section.as_deref(),
+        budget_context.as_deref(),
+        watchlist_context.as_deref(),
+    );
 
     info!(backend = %config.llm.fetch, "Discovering stock candidates");
 
     let response_text = backend.send_message(&prompt, 8192).await?;
-    let candidates = parse_discover_response(&response_text)?;
-
-    let valid_tickers: Vec<&DiscoverCandidate> = candidates
-        .iter()
-        .filter(|c| {
-            if is_valid_ticker(&c.ticker) {
-                true
-            } else {
-                warn!(ticker = %c.ticker, "Invalid ticker format, skipping");
-                false
-            }
-        })
-        .collect();
-
-    // Diff management
-    let current_watchlist = db::watchlist_list(conn).await?;
-    let current_tickers: std::collections::HashSet<String> = current_watchlist
-        .iter()
-        .map(|w| w.ticker.clone())
-        .collect();
-    let new_tickers: std::collections::HashSet<String> =
-        valid_tickers.iter().map(|c| c.ticker.clone()).collect();
+    let response = parse_discover_response(&response_text)?;
 
     // Get held tickers to protect from removal
     let positions = portfolio::list_positions(conn).await?;
     let held_tickers: std::collections::HashSet<String> =
         positions.iter().map(|p| p.ticker.clone()).collect();
 
-    // Add new tickers
+    // Process add actions
     let mut added = Vec::new();
-    for candidate in &valid_tickers {
-        // Save company name from LLM response to stocks table
-        if !candidate.name.is_empty() {
-            db::save_stock(conn, &candidate.ticker, &candidate.name, None).await?;
+    for action in &response.add {
+        if !is_valid_ticker(&action.ticker) {
+            warn!(ticker = %action.ticker, "Invalid ticker format, skipping");
+            continue;
         }
+        if !action.name.is_empty() {
+            db::save_stock(conn, &action.ticker, &action.name, None).await?;
+        }
+        let notes = if action.reason.is_empty() {
+            None
+        } else {
+            Some(action.reason.as_str())
+        };
+        db::watchlist_add(conn, &action.ticker, notes).await?;
+        db::save_watchlist_event(conn, &action.ticker, "add", Some(&action.reason)).await?;
+        info!(ticker = %action.ticker, name = %action.name, "Added to watchlist");
+        added.push(action.ticker.clone());
+    }
 
-        if !current_tickers.contains(&candidate.ticker) {
-            let notes = if candidate.reason.is_empty() {
-                None
-            } else {
-                Some(candidate.reason.as_str())
-            };
-            db::watchlist_add(conn, &candidate.ticker, notes).await?;
-            info!(ticker = %candidate.ticker, name = %candidate.name, "Added to watchlist");
-            added.push(candidate.ticker.clone());
+    // Process remove actions (protect held positions)
+    let mut removed = Vec::new();
+    let mut kept = Vec::new();
+    for action in &response.remove {
+        if !is_valid_ticker(&action.ticker) {
+            warn!(ticker = %action.ticker, "Invalid ticker format, skipping");
+            continue;
+        }
+        if held_tickers.contains(&action.ticker) {
+            info!(ticker = %action.ticker, "Kept in watchlist (has active position)");
+            db::save_watchlist_event(conn, &action.ticker, "keep", Some("has active position")).await?;
+            kept.push(action.ticker.clone());
+        } else {
+            db::watchlist_remove(conn, &action.ticker).await?;
+            db::save_watchlist_event(conn, &action.ticker, "remove", Some(&action.reason)).await?;
+            info!(ticker = %action.ticker, "Removed from watchlist");
+            removed.push(action.ticker.clone());
         }
     }
 
-    // Remove tickers no longer in discover list (but keep held ones)
-    let mut removed = Vec::new();
-    let mut kept = Vec::new();
-    for item in &current_watchlist {
-        if !new_tickers.contains(&item.ticker) {
-            if held_tickers.contains(&item.ticker) {
-                info!(ticker = %item.ticker, "Kept in watchlist (has active position)");
-                kept.push(item.ticker.clone());
-            } else {
-                db::watchlist_remove(conn, &item.ticker).await?;
-                info!(ticker = %item.ticker, "Removed from watchlist");
-                removed.push(item.ticker.clone());
-            }
+    // Process keep actions (log events)
+    for action in &response.keep {
+        if !is_valid_ticker(&action.ticker) {
+            warn!(ticker = %action.ticker, "Invalid ticker format, skipping");
+            continue;
         }
+        db::save_watchlist_event(conn, &action.ticker, "keep", Some(&action.reason)).await?;
+        kept.push(action.ticker.clone());
     }
 
     info!(
         added = added.len(),
         removed = removed.len(),
         kept = kept.len(),
-        total = new_tickers.len(),
         "Discovery complete"
     );
 
@@ -143,7 +157,11 @@ pub async fn list(conn: &Connection) -> Result<Vec<db::WatchlistItem>> {
     db::watchlist_list(conn).await
 }
 
-fn build_discover_prompt(spec_section: Option<&str>, budget_context: Option<&str>) -> String {
+fn build_discover_prompt(
+    spec_section: Option<&str>,
+    budget_context: Option<&str>,
+    watchlist_context: Option<&str>,
+) -> String {
     let spec_part =
         spec_section.unwrap_or("No investment spec loaded. Use general best practices for JP stocks.");
 
@@ -151,14 +169,22 @@ fn build_discover_prompt(spec_section: Option<&str>, budget_context: Option<&str
         .map(|b| format!("\n{b}\n"))
         .unwrap_or_default();
 
+    let watchlist_part = watchlist_context
+        .map(|w| format!("\n{w}\n"))
+        .unwrap_or_else(|| "\n## Current Watchlist\n\nNo stocks currently tracked.\n\n".to_string());
+
     format!(
-        r#"You are a Japanese stock market research analyst. Your task is to discover promising investment candidates based on the investment policy below.
+        r#"You are a Japanese stock market research analyst. Your task is to review and update the investment watchlist based on the investment policy below.
 
 ## Investment Policy
 {spec_part}
-{budget_part}
-## Instructions
-Based on the investment policy above, identify 10-20 promising Japanese stock candidates that match the criteria.
+{budget_part}{watchlist_part}## Instructions
+Review the current watchlist and investment policy above. Decide for each tracked stock whether to keep or remove it, and identify new promising candidates to add. Aim for a total of 10-20 stocks in the watchlist.
+
+For each action, provide:
+- ticker: 4-digit ticker code (e.g., "7203")
+- name: Company name in Japanese (required for new additions)
+- reason: Brief explanation of your decision (1-2 sentences)
 
 Consider:
 1. Fundamental value (PBR, PER, ROE as specified in policy)
@@ -167,29 +193,36 @@ Consider:
 4. Sector trends and macro environment
 5. Technical momentum
 
-For each candidate, provide:
-- ticker: 4-digit ticker code (e.g., "7203")
-- name: Company name in Japanese
-- reason: Brief explanation of why this stock fits the policy (1-2 sentences)
-
 Respond ONLY with a JSON object in this exact format (no markdown, no code blocks):
 {{
-  "candidates": [
+  "keep": [
     {{
       "ticker": "7203",
-      "name": "トヨタ自動車",
-      "reason": "PBR 1.0倍割れで割安、ROE改善トレンド"
+      "reason": "ROE改善トレンド継続中"
+    }}
+  ],
+  "add": [
+    {{
+      "ticker": "6758",
+      "name": "ソニーグループ",
+      "reason": "新規カタリスト発生、PBR割安圏"
+    }}
+  ],
+  "remove": [
+    {{
+      "ticker": "9984",
+      "reason": "PBR基準を満たさなくなった"
     }}
   ]
 }}"#
     )
 }
 
-fn parse_discover_response(text: &str) -> Result<Vec<DiscoverCandidate>> {
+fn parse_discover_response(text: &str) -> Result<DiscoverResponse> {
     let json_str = extract_json(text);
     let response: DiscoverResponse = serde_json::from_str(json_str)
         .map_err(|e| anyhow::anyhow!("Failed to parse discover response: {}\nRaw: {}", e, text))?;
-    Ok(response.candidates)
+    Ok(response)
 }
 
 fn extract_json(text: &str) -> &str {
@@ -212,28 +245,32 @@ mod tests {
 
     #[test]
     fn test_parse_discover_response() {
-        let json = r#"{"candidates": [{"ticker": "7203", "name": "トヨタ自動車", "reason": "割安"}]}"#;
-        let candidates = parse_discover_response(json).unwrap();
-        assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].ticker, "7203");
-        assert_eq!(candidates[0].name, "トヨタ自動車");
+        let json = r#"{"keep": [{"ticker": "7203", "reason": "継続"}], "add": [{"ticker": "6758", "name": "ソニー", "reason": "割安"}], "remove": [{"ticker": "9984", "reason": "基準外"}]}"#;
+        let response = parse_discover_response(json).unwrap();
+        assert_eq!(response.keep.len(), 1);
+        assert_eq!(response.keep[0].ticker, "7203");
+        assert_eq!(response.add.len(), 1);
+        assert_eq!(response.add[0].ticker, "6758");
+        assert_eq!(response.add[0].name, "ソニー");
+        assert_eq!(response.remove.len(), 1);
+        assert_eq!(response.remove[0].ticker, "9984");
     }
 
     #[test]
     fn test_parse_discover_response_with_markdown() {
-        let text = "```json\n{\"candidates\": [{\"ticker\": \"6758\", \"name\": \"ソニー\", \"reason\": \"成長\"}]}\n```";
-        let candidates = parse_discover_response(text).unwrap();
-        assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].ticker, "6758");
+        let text = "```json\n{\"keep\": [], \"add\": [{\"ticker\": \"6758\", \"name\": \"ソニー\", \"reason\": \"成長\"}], \"remove\": []}\n```";
+        let response = parse_discover_response(text).unwrap();
+        assert_eq!(response.add.len(), 1);
+        assert_eq!(response.add[0].ticker, "6758");
     }
 
     #[test]
-    fn test_parse_discover_response_minimal() {
-        let json = r#"{"candidates": [{"ticker": "9984"}]}"#;
-        let candidates = parse_discover_response(json).unwrap();
-        assert_eq!(candidates.len(), 1);
-        assert!(candidates[0].name.is_empty());
-        assert!(candidates[0].reason.is_empty());
+    fn test_parse_discover_response_partial() {
+        let json = r#"{"add": [{"ticker": "9984", "name": "SBG", "reason": "割安"}]}"#;
+        let response = parse_discover_response(json).unwrap();
+        assert_eq!(response.add.len(), 1);
+        assert!(response.keep.is_empty());
+        assert!(response.remove.is_empty());
     }
 
     #[test]

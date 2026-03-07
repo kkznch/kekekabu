@@ -94,6 +94,16 @@ CREATE TABLE IF NOT EXISTS trades (
 );
 ";
 
+pub const CREATE_WATCHLIST_EVENTS_TABLE: &str = "
+CREATE TABLE IF NOT EXISTS watchlist_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    action TEXT NOT NULL CHECK(action IN ('add', 'remove', 'keep')),
+    reason TEXT,
+    discovered_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+";
+
 pub const ALL_SCHEMAS: &[&str] = &[
     CREATE_STOCKS_TABLE,
     CREATE_PRICES_TABLE,
@@ -102,4 +112,5 @@ pub const ALL_SCHEMAS: &[&str] = &[
     CREATE_FETCH_RESULTS_TABLE,
     CREATE_PORTFOLIO_POSITIONS_TABLE,
     CREATE_TRADES_TABLE,
+    CREATE_WATCHLIST_EVENTS_TABLE,
 ];

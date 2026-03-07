@@ -1,7 +1,10 @@
 use anyhow::{Context, Result, bail};
+use reqwest::StatusCode;
 use serde::Deserialize;
+use tracing::warn;
 
 const BASE_URL: &str = "https://api.jquants.com/v2";
+const MAX_RETRIES: u32 = 3;
 
 #[derive(Debug, Deserialize)]
 struct EquitiesMasterResponse {
@@ -58,12 +61,32 @@ impl JQuantsClient {
         }
     }
 
+    async fn get_with_retry(&self, url: &str) -> Result<reqwest::Response> {
+        for attempt in 0..MAX_RETRIES {
+            let resp = self
+                .http
+                .get(url)
+                .header("x-api-key", &self.api_key)
+                .send()
+                .await?;
+
+            if resp.status() == StatusCode::TOO_MANY_REQUESTS {
+                let wait = 2u64.pow(attempt + 1);
+                warn!(attempt = attempt + 1, wait_secs = wait, "Rate limited, retrying");
+                tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+                continue;
+            }
+
+            return Ok(resp);
+        }
+
+        bail!("Rate limited after {} retries: {}", MAX_RETRIES, url)
+    }
+
     pub async fn get_stock_info(&self, code: &str) -> Result<Option<ListedInfo>> {
+        let url = format!("{BASE_URL}/equities/master?code={}", code);
         let resp = self
-            .http
-            .get(format!("{BASE_URL}/equities/master?code={}", code))
-            .header("x-api-key", &self.api_key)
-            .send()
+            .get_with_retry(&url)
             .await
             .context("Failed to request J-Quants equities/master")?;
 
@@ -93,10 +116,7 @@ impl JQuantsClient {
         );
 
         let resp = self
-            .http
-            .get(&url)
-            .header("x-api-key", &self.api_key)
-            .send()
+            .get_with_retry(&url)
             .await
             .with_context(|| format!("Failed to request daily quotes for {}", code))?;
 

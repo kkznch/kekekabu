@@ -52,6 +52,8 @@ pub async fn run(conn: &Connection, config: &AppConfig, days: u32) -> Result<Vec
 
         let stock_id = db::save_stock(conn, &item.ticker, name, sector).await?;
 
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
         match client
             .get_daily_quotes(&item.ticker, &from_date, &to_date)
             .await

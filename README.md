@@ -27,7 +27,7 @@ discover → scan → fetch → eval → execute → report
 | `execute` | R | - | - |
 | `report` | R | - | - |
 | `portfolio` | R/W | - | - |
-| `history` | R | - | - |
+| `show` | R | - | - |
 | `config init` | - | - | - |
 | `config validate` | - | - | - |
 
@@ -155,8 +155,14 @@ kabu eval
 kabu execute --dry-run
 kabu report -o report.md
 
-# ウォッチリスト確認
-kabu discover --list
+# DB 閲覧
+kabu show watchlist                  # ウォッチリスト
+kabu show events                    # ウォッチリスト変更履歴
+kabu show events --ticker 7203      # 銘柄別履歴
+kabu show positions                 # 保有ポジション
+kabu show evaluations               # 評価履歴
+kabu show stocks                    # 登録銘柄一覧
+kabu show tables                    # テーブル統計
 
 # ポートフォリオ管理
 kabu portfolio buy 7203 --quantity 100 --price 2000
@@ -164,9 +170,6 @@ kabu portfolio sell 7203 --quantity 50 --price 2200
 kabu portfolio positions
 kabu portfolio summary
 kabu portfolio trades
-
-# 評価履歴
-kabu history --limit 20
 ```
 
 出力はデフォルトで JSON（stdout）。`--format human` で人間向け表示に切り替え可能。

@@ -31,11 +31,7 @@ enum Command {
     #[command(subcommand)]
     Config(ConfigCommand),
     /// Discover stock candidates via LLM and update watchlist
-    Discover {
-        /// List current watchlist instead of running discovery
-        #[arg(long)]
-        list: bool,
-    },
+    Discover,
     /// Fetch price data and compute TA indicators for watchlist stocks
     Scan {
         /// Number of days of historical data to fetch
@@ -72,12 +68,33 @@ enum Command {
     /// Manage portfolio positions
     #[command(subcommand)]
     Portfolio(PortfolioCommand),
-    /// List past evaluations
-    History {
+    /// View database contents
+    #[command(subcommand)]
+    Show(ShowCommand),
+}
+
+#[derive(Subcommand)]
+enum ShowCommand {
+    /// Current watchlist
+    Watchlist,
+    /// Watchlist change events (add/remove/keep history)
+    Events {
+        /// Filter by ticker
+        #[arg(long)]
+        ticker: Option<String>,
+    },
+    /// Active portfolio positions
+    Positions,
+    /// Past evaluations
+    Evaluations {
         /// Number of evaluations to show
         #[arg(long, default_value = "20")]
         limit: i64,
     },
+    /// Registered stocks
+    Stocks,
+    /// Table row counts
+    Tables,
 }
 
 #[derive(Subcommand)]
@@ -147,19 +164,33 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    let config = config::AppConfig::load()?;
     let conn = db::init_db().await?;
 
-    match cli.command {
-        Command::Config(_) => unreachable!(),
-        Command::Discover { list } => {
-            if list {
-                let items = cmd::discover::list(&conn).await?;
-                output::print_list_output(&items, cli.format);
-            } else {
-                let result = cmd::discover::run(&conn, &config).await?;
-                output::print_output(&result, cli.format);
+    // show subcommands don't need config
+    if let Command::Show(sub) = cli.command {
+        let format = cli.format;
+        match sub {
+            ShowCommand::Watchlist => cmd::show::watchlist(&conn, format).await?,
+            ShowCommand::Events { ticker } => {
+                cmd::show::events(&conn, ticker.as_deref(), format).await?
             }
+            ShowCommand::Positions => cmd::show::positions(&conn, format).await?,
+            ShowCommand::Evaluations { limit } => {
+                cmd::show::evaluations(&conn, limit, format).await?
+            }
+            ShowCommand::Stocks => cmd::show::stocks(&conn, format).await?,
+            ShowCommand::Tables => cmd::show::tables(&conn, format).await?,
+        }
+        return Ok(());
+    }
+
+    let config = config::AppConfig::load()?;
+
+    match cli.command {
+        Command::Config(_) | Command::Show(_) => unreachable!(),
+        Command::Discover => {
+            let result = cmd::discover::run(&conn, &config).await?;
+            output::print_output(&result, cli.format);
         }
         Command::Scan { days } => {
             let results = cmd::scan::run(&conn, &config, days).await?;
@@ -218,10 +249,6 @@ async fn main() -> Result<()> {
                 output::print_list_output(&trades, cli.format);
             }
         },
-        Command::History { limit } => {
-            let evals = db::list_evaluations(&conn, limit).await?;
-            output::print_list_output(&evals, cli.format);
-        }
     }
 
     Ok(())

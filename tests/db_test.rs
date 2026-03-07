@@ -245,3 +245,50 @@ async fn test_save_watchlist_event_without_reason() -> Result<()> {
     assert_eq!(count, 1);
     Ok(())
 }
+
+#[tokio::test]
+async fn test_list_watchlist_events() -> Result<()> {
+    let conn = setup_db().await?;
+    kekekabu::db::save_watchlist_event(&conn, "7203", "add", Some("割安")).await?;
+    kekekabu::db::save_watchlist_event(&conn, "6758", "add", Some("成長")).await?;
+    kekekabu::db::save_watchlist_event(&conn, "7203", "keep", Some("継続")).await?;
+
+    let all = kekekabu::db::list_watchlist_events(&conn, None).await?;
+    assert_eq!(all.len(), 3);
+
+    let filtered = kekekabu::db::list_watchlist_events(&conn, Some("7203")).await?;
+    assert_eq!(filtered.len(), 2);
+    assert!(filtered.iter().all(|e| e.ticker == "7203"));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_list_stocks() -> Result<()> {
+    let conn = setup_db().await?;
+    kekekabu::db::save_stock(&conn, "7203", "Toyota", Some("Automobile")).await?;
+    kekekabu::db::save_stock(&conn, "6758", "Sony", None).await?;
+
+    let stocks = kekekabu::db::list_stocks(&conn).await?;
+    assert_eq!(stocks.len(), 2);
+    assert_eq!(stocks[0].ticker, "6758"); // sorted by ticker ASC
+    assert_eq!(stocks[1].ticker, "7203");
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_table_stats() -> Result<()> {
+    let conn = setup_db().await?;
+    kekekabu::db::save_stock(&conn, "7203", "Toyota", None).await?;
+    kekekabu::db::watchlist_add(&conn, "7203", None).await?;
+
+    let stats = kekekabu::db::table_stats(&conn).await?;
+    assert_eq!(stats.len(), 8);
+
+    let stocks_stat = stats.iter().find(|s| s.table_name == "stocks").unwrap();
+    assert_eq!(stocks_stat.row_count, 1);
+
+    let watchlist_stat = stats.iter().find(|s| s.table_name == "watchlist").unwrap();
+    assert_eq!(watchlist_stat.row_count, 1);
+    Ok(())
+}

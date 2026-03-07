@@ -476,6 +476,115 @@ pub async fn save_watchlist_event(
     .context("Failed to save watchlist event")
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct WatchlistEvent {
+    pub ticker: String,
+    pub action: String,
+    pub reason: Option<String>,
+    pub discovered_at: String,
+}
+
+pub async fn list_watchlist_events(
+    conn: &Connection,
+    ticker: Option<&str>,
+) -> Result<Vec<WatchlistEvent>> {
+    let ticker = ticker.map(|s| s.to_string());
+    conn.call(move |conn| {
+        let (sql, params): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = if let Some(ref t) = ticker {
+            (
+                "SELECT ticker, action, reason, discovered_at FROM watchlist_events WHERE ticker = ?1 ORDER BY discovered_at DESC",
+                vec![Box::new(t.clone())],
+            )
+        } else {
+            (
+                "SELECT ticker, action, reason, discovered_at FROM watchlist_events ORDER BY discovered_at DESC",
+                vec![],
+            )
+        };
+        let mut stmt = conn.prepare(sql)?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(params.iter()), |row| {
+                Ok(WatchlistEvent {
+                    ticker: row.get(0)?,
+                    action: row.get(1)?,
+                    reason: row.get(2)?,
+                    discovered_at: row.get(3)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok::<Vec<WatchlistEvent>, rusqlite::Error>(rows)
+    })
+    .await
+    .context("Failed to list watchlist events")
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StockInfo {
+    pub ticker: String,
+    pub name: String,
+    pub sector: Option<String>,
+    pub created_at: String,
+}
+
+pub async fn list_stocks(conn: &Connection) -> Result<Vec<StockInfo>> {
+    conn.call(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT ticker, name, sector, created_at FROM stocks ORDER BY ticker ASC",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(StockInfo {
+                    ticker: row.get(0)?,
+                    name: row.get(1)?,
+                    sector: row.get(2)?,
+                    created_at: row.get(3)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok::<Vec<StockInfo>, rusqlite::Error>(rows)
+    })
+    .await
+    .context("Failed to list stocks")
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TableStat {
+    pub table_name: String,
+    pub row_count: i64,
+}
+
+pub async fn table_stats(conn: &Connection) -> Result<Vec<TableStat>> {
+    conn.call(|conn| {
+        let tables = [
+            "stocks",
+            "prices",
+            "watchlist",
+            "evaluations",
+            "fetch_results",
+            "portfolio_positions",
+            "trades",
+            "watchlist_events",
+        ];
+        let mut stats = Vec::new();
+        for table in tables {
+            let count: i64 = conn
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM {table}"),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            stats.push(TableStat {
+                table_name: table.to_string(),
+                row_count: count,
+            });
+        }
+        Ok::<Vec<TableStat>, rusqlite::Error>(stats)
+    })
+    .await
+    .context("Failed to get table stats")
+}
+
 pub async fn get_latest_evaluations_for_today(conn: &Connection) -> Result<Vec<Evaluation>> {
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     conn.call(move |conn| {

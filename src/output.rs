@@ -164,6 +164,41 @@ impl HumanDisplay for crate::portfolio::PortfolioSummary {
     }
 }
 
+impl HumanDisplay for crate::db::WatchlistEvent {
+    fn print_human(&self) {
+        let action_display = match self.action.as_str() {
+            "add" => "+add   ",
+            "remove" => "-remove",
+            "keep" => " keep  ",
+            _ => &self.action,
+        };
+        println!(
+            "  {} {:<6} {}  {}",
+            &self.discovered_at[..10],
+            self.ticker,
+            action_display,
+            self.reason.as_deref().unwrap_or("")
+        );
+    }
+}
+
+impl HumanDisplay for crate::db::StockInfo {
+    fn print_human(&self) {
+        println!(
+            "  {:<6} {:<20} {}",
+            self.ticker,
+            self.name,
+            self.sector.as_deref().unwrap_or("-"),
+        );
+    }
+}
+
+impl HumanDisplay for crate::db::TableStat {
+    fn print_human(&self) {
+        println!("  {:<25} {:>8} rows", self.table_name, self.row_count);
+    }
+}
+
 impl HumanDisplay for crate::portfolio::TradeRecord {
     fn print_human(&self) {
         println!(

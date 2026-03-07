@@ -153,9 +153,6 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
     })
 }
 
-pub async fn list(conn: &Connection) -> Result<Vec<db::WatchlistItem>> {
-    db::watchlist_list(conn).await
-}
 
 fn build_discover_prompt(
     spec_section: Option<&str>,

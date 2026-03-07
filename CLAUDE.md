@@ -22,7 +22,7 @@ src/
   circuit_breaker.rs Safety checks (abnormal price moves, market-wide crash)
   spec.rs            Investment Spec TOML loader + SHA256 hashing
   db/
-    mod.rs           SQLite operations (7 tables)
+    mod.rs           SQLite operations (8 tables)
     schema.rs        Table definitions
   llm/
     mod.rs           LlmBackend trait + factory
@@ -36,6 +36,7 @@ src/
     eval.rs          LLM investment evaluation (Hunting: Buy/Avoid, Farming: Hold/Sell)
     execute.rs       Trade execution (circuit breaker + Buy/Sell signals)
     report.rs        Markdown report generation
+    show.rs          DB viewer (watchlist, events, positions, evaluations, stocks, tables)
     config.rs        Config init + validate handlers
 ```
 
@@ -54,7 +55,6 @@ src/
 ```sh
 # Pipeline
 kabu discover                        # LLM stock discovery → watchlist
-kabu discover --list                 # List current watchlist
 kabu scan --days 60                  # Fetch prices + compute TA
 kabu fetch                           # Gather info via Gemini
 kabu eval                            # LLM evaluation (Hunting + Farming)
@@ -66,13 +66,21 @@ kabu config init                     # Initialize config + spec template
 kabu config init --force             # Overwrite existing config
 kabu config validate                 # Validate config + spec
 
-# Management
+# DB viewer (no config required)
+kabu show watchlist                  # Current watchlist
+kabu show events                     # Watchlist change history
+kabu show events --ticker 7203       # Filter by ticker
+kabu show positions                  # Active positions
+kabu show evaluations                # Past evaluations
+kabu show stocks                     # Registered stocks
+kabu show tables                     # Table row counts
+
+# Portfolio management
 kabu portfolio buy 7203 --quantity 100 --price 2000
 kabu portfolio sell 7203 --quantity 50 --price 2200
 kabu portfolio positions             # Active positions
 kabu portfolio summary               # Portfolio summary
 kabu portfolio trades                # Trade history
-kabu history --limit 20              # Past evaluations
 ```
 
 ## Automation (cron/launchd)
@@ -118,12 +126,13 @@ path = "specs/jp-core-value-quality-v1.toml"
 
 Environment variables override config: `JQUANTS_API_KEY`, `ANTHROPIC_API_KEY`.
 
-## DB Tables (7)
+## DB Tables (8)
 
 1. `stocks` — ticker master
 2. `prices` — daily OHLCV
 3. `watchlist` — monitored stocks (managed by discover)
-4. `evaluations` — LLM judgments (with spec_hash)
-5. `fetch_results` — gathered information
-6. `portfolio_positions` — active positions (weighted avg cost)
-7. `trades` — trade history (with P&L)
+4. `watchlist_events` — watchlist change log (add/remove/keep with reasons)
+5. `evaluations` — LLM judgments (with spec_hash)
+6. `fetch_results` — gathered information
+7. `portfolio_positions` — active positions (weighted avg cost)
+8. `trades` — trade history (with P&L)

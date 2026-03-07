@@ -62,7 +62,7 @@ impl JQuantsClient {
         let resp = self
             .http
             .get(format!("{BASE_URL}/listed/info?code={}", code))
-            .header("Authorization", format!("Bearer {}", &self.api_key))
+            .header("x-api-key", &self.api_key)
             .send()
             .await
             .context("Failed to request J-Quants listed/info")?;
@@ -95,7 +95,7 @@ impl JQuantsClient {
         let resp = self
             .http
             .get(&url)
-            .header("Authorization", format!("Bearer {}", &self.api_key))
+            .header("x-api-key", &self.api_key)
             .send()
             .await
             .with_context(|| format!("Failed to request daily quotes for {}", code))?;

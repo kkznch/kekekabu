@@ -5,9 +5,10 @@ const BASE_URL: &str = "https://api.jquants.com/v2";
 
 #[derive(Debug, Deserialize)]
 struct ListedInfoResponse {
-    pub info: Vec<ListedInfo>,
+    info: Vec<ListedInfo>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct ListedInfo {
     #[serde(rename = "Code")]
@@ -23,6 +24,7 @@ struct DailyQuotesResponse {
     pub daily_quotes: Vec<DailyQuote>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct DailyQuote {
     #[serde(rename = "Code")]
@@ -54,29 +56,6 @@ impl JQuantsClient {
             http: reqwest::Client::new(),
             api_key,
         }
-    }
-
-    pub async fn get_listed_info(&self) -> Result<Vec<ListedInfo>> {
-        let resp = self
-            .http
-            .get(format!("{BASE_URL}/listed/info"))
-            .header("Authorization", format!("Bearer {}", &self.api_key))
-            .send()
-            .await
-            .context("Failed to request J-Quants listed/info")?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let text = resp.text().await.unwrap_or_default();
-            bail!("J-Quants listed/info failed ({}): {}", status, text);
-        }
-
-        let data: ListedInfoResponse = resp
-            .json()
-            .await
-            .context("Failed to parse listed info response")?;
-
-        Ok(data.info)
     }
 
     pub async fn get_stock_info(&self, code: &str) -> Result<Option<ListedInfo>> {

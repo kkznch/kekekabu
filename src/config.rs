@@ -10,8 +10,6 @@ pub struct AppConfig {
     pub llm: LlmConfig,
     #[serde(default)]
     pub spec: SpecConfig,
-    #[serde(default)]
-    pub output: OutputConfig,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -68,26 +66,6 @@ impl Default for SpecConfig {
 impl SpecConfig {
     fn default_path() -> String {
         "specs/template.yaml".to_string()
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct OutputConfig {
-    #[serde(default = "OutputConfig::default_format")]
-    pub default_format: String,
-}
-
-impl Default for OutputConfig {
-    fn default() -> Self {
-        Self {
-            default_format: "json".to_string(),
-        }
-    }
-}
-
-impl OutputConfig {
-    fn default_format() -> String {
-        "json".to_string()
     }
 }
 

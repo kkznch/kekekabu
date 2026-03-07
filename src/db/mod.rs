@@ -125,7 +125,6 @@ pub struct PriceData {
     pub highs: Vec<f64>,
     pub lows: Vec<f64>,
     pub volumes: Vec<f64>,
-    pub dates: Vec<String>,
 }
 
 pub async fn fetch_price_data(conn: &Connection, stock_id: i64) -> Result<PriceData> {
@@ -138,7 +137,6 @@ pub async fn fetch_price_data(conn: &Connection, stock_id: i64) -> Result<PriceD
         let mut highs = Vec::new();
         let mut lows = Vec::new();
         let mut volumes = Vec::new();
-        let mut dates = Vec::new();
 
         let rows = stmt.query_map([stock_id], |row| {
             Ok((
@@ -151,8 +149,7 @@ pub async fn fetch_price_data(conn: &Connection, stock_id: i64) -> Result<PriceD
         })?;
 
         for row in rows {
-            let (date, high, low, close, vol) = row?;
-            dates.push(date);
+            let (_date, high, low, close, vol) = row?;
             highs.push(decimal_str_to_f64(&high));
             lows.push(decimal_str_to_f64(&low));
             closes.push(decimal_str_to_f64(&close));
@@ -164,7 +161,6 @@ pub async fn fetch_price_data(conn: &Connection, stock_id: i64) -> Result<PriceD
             highs,
             lows,
             volumes,
-            dates,
         })
     })
     .await

@@ -417,6 +417,42 @@ pub async fn get_fetch_results_for_stock(
     .context("Failed to get fetch results")
 }
 
+// -- Trade cash summary --
+
+pub struct TradeCashSummary {
+    pub total_invested: f64,
+    pub total_recovered: f64,
+}
+
+pub async fn trade_cash_summary(conn: &Connection) -> Result<TradeCashSummary> {
+    conn.call(|conn| {
+        let total_invested: f64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(CAST(price AS REAL) * CAST(quantity AS REAL)), 0)
+                 FROM trades WHERE side = 'buy'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0.0);
+
+        let total_recovered: f64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(CAST(price AS REAL) * CAST(quantity AS REAL)), 0)
+                 FROM trades WHERE side = 'sell'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0.0);
+
+        Ok::<TradeCashSummary, rusqlite::Error>(TradeCashSummary {
+            total_invested,
+            total_recovered,
+        })
+    })
+    .await
+    .context("Failed to get trade cash summary")
+}
+
 pub async fn get_latest_evaluations_for_today(conn: &Connection) -> Result<Vec<Evaluation>> {
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     conn.call(move |conn| {

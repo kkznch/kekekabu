@@ -159,3 +159,48 @@ async fn test_evaluation_save_and_list() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_trade_cash_summary_empty() -> Result<()> {
+    let conn = setup_db().await?;
+    let summary = kekekabu::db::trade_cash_summary(&conn).await?;
+    assert!((summary.total_invested - 0.0).abs() < 0.01);
+    assert!((summary.total_recovered - 0.0).abs() < 0.01);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_trade_cash_summary_buy_only() -> Result<()> {
+    let conn = setup_db().await?;
+    kekekabu::portfolio::buy(
+        &conn, "7203",
+        rust_decimal::Decimal::from(100),
+        rust_decimal::Decimal::from(2000),
+        None,
+    ).await?;
+    let summary = kekekabu::db::trade_cash_summary(&conn).await?;
+    assert!((summary.total_invested - 200000.0).abs() < 0.01);
+    assert!((summary.total_recovered - 0.0).abs() < 0.01);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_trade_cash_summary_buy_and_sell() -> Result<()> {
+    let conn = setup_db().await?;
+    kekekabu::portfolio::buy(
+        &conn, "7203",
+        rust_decimal::Decimal::from(100),
+        rust_decimal::Decimal::from(2000),
+        None,
+    ).await?;
+    kekekabu::portfolio::sell(
+        &conn, "7203",
+        rust_decimal::Decimal::from(50),
+        rust_decimal::Decimal::from(2200),
+        None,
+    ).await?;
+    let summary = kekekabu::db::trade_cash_summary(&conn).await?;
+    assert!((summary.total_invested - 200000.0).abs() < 0.01);
+    assert!((summary.total_recovered - 110000.0).abs() < 0.01);
+    Ok(())
+}

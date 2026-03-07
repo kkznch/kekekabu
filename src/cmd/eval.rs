@@ -80,10 +80,24 @@ pub async fn run(
     }
 
     // Load spec if available
-    let spec_section = spec::load_spec(&config.spec.path)
-        .ok()
-        .map(|s| s.to_prompt_section());
+    let loaded_spec = spec::load_spec(&config.spec.path).ok();
+    let spec_section = loaded_spec.as_ref().map(|s| s.to_prompt_section());
     let spec_hash_val = spec::spec_hash(&config.spec.path).ok();
+    let budget_initial_cash = loaded_spec.as_ref().and_then(|s| s.budget_initial_cash());
+
+    // Build budget context if initial_cash is configured
+    let budget_context = if let Some(initial_cash) = budget_initial_cash {
+        let cash_summary = db::trade_cash_summary(conn).await?;
+        let positions = portfolio::list_positions(conn).await?;
+        Some(spec::build_budget_context(
+            initial_cash,
+            cash_summary.total_invested,
+            cash_summary.total_recovered,
+            positions.len(),
+        ))
+    } else {
+        None
+    };
 
     let mut results = Vec::new();
 
@@ -137,6 +151,7 @@ pub async fn run(
             &fetch_section,
             spec_section.as_deref(),
             target.position_info.as_ref(),
+            budget_context.as_deref(),
         );
 
         info!(ticker = %target.ticker, status = %target.status, backend = %config.llm.eval, "Running evaluation");
@@ -268,8 +283,13 @@ fn build_eval_prompt(
     fetch_info: &str,
     spec_section: Option<&str>,
     position_info: Option<&PositionInfo>,
+    budget_context: Option<&str>,
 ) -> String {
     let spec_part = spec_section.unwrap_or("No investment spec loaded. Use general best practices.");
+
+    let budget_part = budget_context
+        .map(|b| format!("\n{b}\n"))
+        .unwrap_or_default();
 
     let status_section = match status {
         "ExistingHolding" => {
@@ -311,7 +331,7 @@ fn build_eval_prompt(
 
 ## Investment Policy
 {spec_part}
-
+{budget_part}
 ## Instructions
 Analyze this stock and provide your evaluation. Consider:
 1. Catalyst validity — Is the original investment thesis or new catalyst still valid?

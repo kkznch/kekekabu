@@ -90,6 +90,9 @@ cargo run -- config validate
 name = "JP Core Value & Quality"
 version = "1.0.0"
 
+[budget]
+initial_cash = 300_000                # 初期投資資金（円）
+
 [universe.liquidity]
 min_avg_daily_volume_3m = 500_000_000  # 5億円
 min_market_cap = 30_000_000_000        # 300億円
@@ -121,6 +124,7 @@ trailing_stop = 0.15
 ```
 
 - `name`（必須）: 戦略名。ログ表示や識別に使用
+- `[budget]` セクションの `initial_cash`（任意）: 初期投資資金（円）。設定すると `discover` / `eval` のプロンプトに残り投資可能額が注入され、予算を考慮した判断が可能に
 - それ以外のセクション・キーは自由に定義可能
 - TOML ファイル全体がそのまま LLM に渡されるため、コメントも LLM への指示として機能します
 

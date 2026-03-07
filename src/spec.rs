@@ -4,6 +4,7 @@ use std::path::Path;
 pub struct InvestmentSpec {
     pub name: String,
     raw_content: String,
+    table: toml::Table,
 }
 
 pub fn load_spec(path: &str) -> Result<InvestmentSpec> {
@@ -24,6 +25,7 @@ pub fn load_spec(path: &str) -> Result<InvestmentSpec> {
     Ok(InvestmentSpec {
         name,
         raw_content: content,
+        table,
     })
 }
 
@@ -58,6 +60,35 @@ impl InvestmentSpec {
             self.name, self.raw_content
         )
     }
+
+    pub fn budget_initial_cash(&self) -> Option<f64> {
+        self.table
+            .get("budget")
+            .and_then(|v| v.as_table())
+            .and_then(|t| t.get("initial_cash"))
+            .and_then(|v| v.as_float().or_else(|| v.as_integer().map(|i| i as f64)))
+    }
+}
+
+pub fn build_budget_context(
+    initial_cash: f64,
+    total_invested: f64,
+    total_recovered: f64,
+    position_count: usize,
+) -> String {
+    let remaining = initial_cash - total_invested + total_recovered;
+    format!(
+        "## Budget Context\n\n\
+         - Initial Cash: {initial_cash:.0} JPY\n\
+         - Invested: {total_invested:.0} JPY\n\
+         - Recovered: {total_recovered:.0} JPY\n\
+         - Remaining: {remaining:.0} JPY\n\
+         - Active Positions: {position_count}\n\
+         \n\
+         Consider the remaining budget when selecting candidates. \
+         Japanese stocks trade in 100-share units (単元株), \
+         so each position requires at least (stock price × 100) JPY."
+    )
 }
 
 #[cfg(test)]
@@ -105,14 +136,61 @@ min_market_cap = 50000000000.0
 
     #[test]
     fn test_to_prompt_section() {
+        let raw = "name = \"Test\"\n[execution]\nstop_loss = -0.07\n";
+        let table: toml::Table = toml::from_str(raw).unwrap();
         let spec = InvestmentSpec {
             name: "Test".to_string(),
-            raw_content: "name = \"Test\"\n[execution]\nstop_loss = -0.07\n".to_string(),
+            raw_content: raw.to_string(),
+            table,
         };
         let prompt = spec.to_prompt_section();
         assert!(prompt.contains("## Investment Spec: Test"));
         assert!(prompt.contains("stop_loss = -0.07"));
         assert!(prompt.contains("```toml"));
+    }
+
+    #[test]
+    fn test_budget_initial_cash_present() {
+        let raw = "name = \"Test\"\n[budget]\ninitial_cash = 300000\n";
+        let table: toml::Table = toml::from_str(raw).unwrap();
+        let spec = InvestmentSpec {
+            name: "Test".to_string(),
+            raw_content: raw.to_string(),
+            table,
+        };
+        assert_eq!(spec.budget_initial_cash(), Some(300000.0));
+    }
+
+    #[test]
+    fn test_budget_initial_cash_float() {
+        let raw = "name = \"Test\"\n[budget]\ninitial_cash = 300000.0\n";
+        let table: toml::Table = toml::from_str(raw).unwrap();
+        let spec = InvestmentSpec {
+            name: "Test".to_string(),
+            raw_content: raw.to_string(),
+            table,
+        };
+        assert_eq!(spec.budget_initial_cash(), Some(300000.0));
+    }
+
+    #[test]
+    fn test_budget_initial_cash_absent() {
+        let raw = "name = \"Test\"\n[execution]\nstop_loss = -0.07\n";
+        let table: toml::Table = toml::from_str(raw).unwrap();
+        let spec = InvestmentSpec {
+            name: "Test".to_string(),
+            raw_content: raw.to_string(),
+            table,
+        };
+        assert_eq!(spec.budget_initial_cash(), None);
+    }
+
+    #[test]
+    fn test_build_budget_context() {
+        let ctx = build_budget_context(300000.0, 120000.0, 30000.0, 2);
+        assert!(ctx.contains("Initial Cash: 300000 JPY"));
+        assert!(ctx.contains("Remaining: 210000 JPY"));
+        assert!(ctx.contains("Active Positions: 2"));
     }
 
     #[test]

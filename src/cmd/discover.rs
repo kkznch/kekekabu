@@ -37,11 +37,25 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
         config.llm.fetch_model.as_deref(),
     )?;
 
-    let spec_section = spec::load_spec(&config.spec.path)
-        .ok()
-        .map(|s| s.to_prompt_section());
+    let loaded_spec = spec::load_spec(&config.spec.path).ok();
+    let spec_section = loaded_spec.as_ref().map(|s| s.to_prompt_section());
+    let budget_initial_cash = loaded_spec.as_ref().and_then(|s| s.budget_initial_cash());
 
-    let prompt = build_discover_prompt(spec_section.as_deref());
+    // Build budget context if initial_cash is configured
+    let budget_context = if let Some(initial_cash) = budget_initial_cash {
+        let cash_summary = db::trade_cash_summary(conn).await?;
+        let positions = portfolio::list_positions(conn).await?;
+        Some(spec::build_budget_context(
+            initial_cash,
+            cash_summary.total_invested,
+            cash_summary.total_recovered,
+            positions.len(),
+        ))
+    } else {
+        None
+    };
+
+    let prompt = build_discover_prompt(spec_section.as_deref(), budget_context.as_deref());
 
     info!(backend = %config.llm.fetch, "Discovering stock candidates");
 
@@ -129,16 +143,20 @@ pub async fn list(conn: &Connection) -> Result<Vec<db::WatchlistItem>> {
     db::watchlist_list(conn).await
 }
 
-fn build_discover_prompt(spec_section: Option<&str>) -> String {
+fn build_discover_prompt(spec_section: Option<&str>, budget_context: Option<&str>) -> String {
     let spec_part =
         spec_section.unwrap_or("No investment spec loaded. Use general best practices for JP stocks.");
+
+    let budget_part = budget_context
+        .map(|b| format!("\n{b}\n"))
+        .unwrap_or_default();
 
     format!(
         r#"You are a Japanese stock market research analyst. Your task is to discover promising investment candidates based on the investment policy below.
 
 ## Investment Policy
 {spec_part}
-
+{budget_part}
 ## Instructions
 Based on the investment policy above, identify 10-20 promising Japanese stock candidates that match the criteria.
 

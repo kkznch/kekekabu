@@ -2,10 +2,10 @@
 name = "keketrade"
 version = "0.1.0"
 edition = "2024"
-default-run = "kktd"
+default-run = "kabu"
 
 [[bin]]
-name = "kktd"
+name = "kabu"
 path = "src/main.rs"
 
 [dependencies]

@@ -4,11 +4,11 @@
 The system SHALL build a comprehensive prompt with TA indicators, fetch results, and investment Spec, then send it to the eval LLM backend for investment judgment.
 
 #### Scenario: Successful evaluation
-- **WHEN** user runs `kktd eval` with stocks in the watchlist that have scan and fetch data
+- **WHEN** user runs `kabu eval` with stocks in the watchlist that have scan and fetch data
 - **THEN** system generates a Buy/Hold/Avoid decision with score (0-100) and rationale for each stock
 
 #### Scenario: Eval for specific tickers
-- **WHEN** user runs `kktd eval 7203`
+- **WHEN** user runs `kabu eval 7203`
 - **THEN** system evaluates only the specified ticker
 
 ### Requirement: Eval response format

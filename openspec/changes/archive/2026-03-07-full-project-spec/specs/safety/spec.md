@@ -25,5 +25,5 @@ The system SHALL report all circuit breaker trigger reasons in the execute outpu
 The system SHALL default `--dry-run` to `true` to prevent accidental order placement.
 
 #### Scenario: Default dry run
-- **WHEN** user runs `kktd execute` without explicit `--dry-run` flag
+- **WHEN** user runs `kabu execute` without explicit `--dry-run` flag
 - **THEN** system operates in dry-run mode (no actual orders placed)

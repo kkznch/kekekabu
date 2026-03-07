@@ -1,4 +1,4 @@
-# keketrade (kktd) task runner
+# keketrade (kabu) task runner
 
 # Build the project
 build:

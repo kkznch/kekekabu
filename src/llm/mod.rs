@@ -63,7 +63,7 @@ fn require_key(value: &Option<String>, key_name: &str, backend: &str) -> Result<
         .ok_or_else(|| {
             anyhow::anyhow!(
                 "{} backend requires {}.\n\
-                 Set it in ~/.config/kktd/config.toml [api] or as an environment variable.",
+                 Set it in ~/.config/kabu/config.toml [api] or as an environment variable.",
                 backend,
                 key_name
             )

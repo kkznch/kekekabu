@@ -71,12 +71,12 @@ impl SpecConfig {
 
 pub fn config_dir() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
-    let dir = PathBuf::from(home).join(".config/kktd");
+    let dir = PathBuf::from(home).join(".config/kabu");
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir)
 }
 
-const CONFIG_TEMPLATE: &str = r#"# kktd configuration
+const CONFIG_TEMPLATE: &str = r#"# kabu configuration
 # See: https://github.com/kkznch/keketrade
 
 [api]
@@ -110,7 +110,7 @@ default_format = "json"
 "#;
 
 const SPEC_TEMPLATE: &str = r#"# Investment Spec: JP Core Value & Quality
-# This file defines the investment strategy for kktd eval.
+# This file defines the investment strategy for kabu eval.
 
 name: "JP Core Value & Quality"
 version: "1.0"
@@ -227,7 +227,7 @@ impl AppConfig {
     pub fn require_key(value: &Option<String>, key_name: &str) -> Result<String> {
         value.clone().ok_or_else(|| {
             anyhow::anyhow!(
-                "{} is not set. Set it in ~/.config/kktd/config.toml or as an environment variable.",
+                "{} is not set. Set it in ~/.config/kabu/config.toml or as an environment variable.",
                 key_name
             )
         })

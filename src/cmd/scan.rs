@@ -24,7 +24,7 @@ pub async fn run(conn: &Connection, config: &AppConfig, days: u32) -> Result<Vec
 
     let watchlist = db::watchlist_list(conn).await?;
     if watchlist.is_empty() {
-        anyhow::bail!("Watchlist is empty. Add stocks with: kktd watchlist add <ticker>");
+        anyhow::bail!("Watchlist is empty. Add stocks with: kabu watchlist add <ticker>");
     }
 
     let to_date = chrono::Local::now().format("%Y-%m-%d").to_string();

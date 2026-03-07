@@ -15,7 +15,7 @@ use output::OutputFormat;
 use rust_decimal::Decimal;
 
 #[derive(Parser)]
-#[command(name = "kktd", about = "JP stock investment CLI")]
+#[command(name = "kabu", about = "JP stock investment CLI")]
 struct Cli {
     #[command(subcommand)]
     command: Command,

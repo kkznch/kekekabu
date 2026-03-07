@@ -4,15 +4,15 @@
 The system SHALL generate a Markdown report from evaluations, grouped by Buy/Hold/Avoid categories.
 
 #### Scenario: Report to stdout
-- **WHEN** user runs `kktd report`
+- **WHEN** user runs `kabu report`
 - **THEN** system outputs a Markdown report to stdout with today's evaluations
 
 #### Scenario: Report to file
-- **WHEN** user runs `kktd report -o report.md`
+- **WHEN** user runs `kabu report -o report.md`
 - **THEN** system writes the Markdown report to the specified file path
 
 #### Scenario: Report for specific date
-- **WHEN** user runs `kktd report --date 2026-03-07`
+- **WHEN** user runs `kabu report --date 2026-03-07`
 - **THEN** system generates a report using evaluations from the specified date
 
 ### Requirement: Report includes TA details

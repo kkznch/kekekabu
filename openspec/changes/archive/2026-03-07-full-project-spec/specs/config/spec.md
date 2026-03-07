@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
-### Requirement: Config file at ~/.config/kktd/config.toml
-The system SHALL load configuration from `~/.config/kktd/config.toml` with sections: [api], [llm], [spec], [output].
+### Requirement: Config file at ~/.config/kabu/config.toml
+The system SHALL load configuration from `~/.config/kabu/config.toml` with sections: [api], [llm], [spec], [output].
 
 #### Scenario: Config loaded successfully
 - **WHEN** config.toml exists with valid TOML
@@ -23,23 +23,23 @@ The system SHALL allow overriding config values with environment variables: JQUA
 - **THEN** system ignores it and uses config.toml value
 
 ### Requirement: Init command generates config and spec template
-The system SHALL generate config.toml and specs/template.yaml when `kktd init` is run.
+The system SHALL generate config.toml and specs/template.yaml when `kabu init` is run.
 
 #### Scenario: First-time init
-- **WHEN** user runs `kktd init` with no existing config
+- **WHEN** user runs `kabu init` with no existing config
 - **THEN** system creates config.toml with commented API key placeholders and specs/template.yaml
 
 #### Scenario: Config already exists
-- **WHEN** user runs `kktd init` with existing config.toml
+- **WHEN** user runs `kabu init` with existing config.toml
 - **THEN** system returns an error suggesting `--force` to overwrite
 
 #### Scenario: Force overwrite
-- **WHEN** user runs `kktd init --force`
+- **WHEN** user runs `kabu init --force`
 - **THEN** system overwrites config.toml and regenerates specs/template.yaml
 
 ### Requirement: Spec template is always overwritten
 The system SHALL always overwrite `specs/template.yaml` on init, as it is a reference template. User custom strategies use separate files.
 
 #### Scenario: Template regenerated
-- **WHEN** user runs `kktd init` (or `--force`)
+- **WHEN** user runs `kabu init` (or `--force`)
 - **THEN** system writes the latest template.yaml regardless of whether it existed

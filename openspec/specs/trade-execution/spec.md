@@ -27,7 +27,7 @@ The system SHALL process today's evaluations and generate buy/sell signals based
 The system SHALL default to dry-run mode, prefixing actions with "[DRY RUN]".
 
 #### Scenario: Dry run mode
-- **WHEN** user runs `kktd execute --dry-run true`
+- **WHEN** user runs `kabu execute --dry-run true`
 - **THEN** system outputs actions prefixed with "[DRY RUN]" without placing actual orders
 
 ### Requirement: Execute checks circuit breaker before processing

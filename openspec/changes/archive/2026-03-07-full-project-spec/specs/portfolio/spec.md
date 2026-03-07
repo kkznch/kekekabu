@@ -4,7 +4,7 @@
 The system SHALL record buy transactions and update portfolio positions with weighted average cost.
 
 #### Scenario: First buy creates new position
-- **WHEN** user runs `kktd portfolio buy 7203 --quantity 100 --price 2000`
+- **WHEN** user runs `kabu portfolio buy 7203 --quantity 100 --price 2000`
 - **THEN** system creates a new position with quantity=100, avg_cost=2000
 
 #### Scenario: Additional buy updates average cost
@@ -26,19 +26,19 @@ The system SHALL record sell transactions, calculate P&L, and update positions.
 The system SHALL list all active portfolio positions.
 
 #### Scenario: Positions output
-- **WHEN** user runs `kktd portfolio positions`
+- **WHEN** user runs `kabu portfolio positions`
 - **THEN** system outputs active positions as JSON (ticker, name, quantity, avg_cost, unrealized_pnl)
 
 ### Requirement: Portfolio summary
 The system SHALL provide an aggregated portfolio summary.
 
 #### Scenario: Summary calculation
-- **WHEN** user runs `kktd portfolio summary`
+- **WHEN** user runs `kabu portfolio summary`
 - **THEN** system outputs position_count, total_invested, total_current_value, total_unrealized_pnl, total_unrealized_pnl_pct
 
 ### Requirement: Trade history
 The system SHALL provide a list of past trades.
 
 #### Scenario: Trade history with limit
-- **WHEN** user runs `kktd portfolio trades --limit 20`
+- **WHEN** user runs `kabu portfolio trades --limit 20`
 - **THEN** system outputs the 20 most recent trades (ticker, side, date, quantity, price, pnl)

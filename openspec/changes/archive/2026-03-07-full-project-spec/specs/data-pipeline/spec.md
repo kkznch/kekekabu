@@ -1,14 +1,14 @@
 ## ADDED Requirements
 
 ### Requirement: Scan fetches price data from J-Quants V2 API
-The system SHALL fetch daily OHLCV price data from J-Quants V2 API for all watchlist stocks when `kktd scan` is executed.
+The system SHALL fetch daily OHLCV price data from J-Quants V2 API for all watchlist stocks when `kabu scan` is executed.
 
 #### Scenario: Successful scan with watchlist stocks
-- **WHEN** user runs `kktd scan --days 60` with stocks in the watchlist
+- **WHEN** user runs `kabu scan --days 60` with stocks in the watchlist
 - **THEN** system fetches price data for each watchlist stock from J-Quants V2 API, saves to DB, and outputs scan results as JSON to stdout
 
 #### Scenario: Empty watchlist
-- **WHEN** user runs `kktd scan` with no stocks in the watchlist
+- **WHEN** user runs `kabu scan` with no stocks in the watchlist
 - **THEN** system outputs an empty JSON array `[]` to stdout
 
 #### Scenario: Rate limiting between API calls

@@ -4,11 +4,11 @@
 The system SHALL use the configured fetch LLM backend to gather latest information (news, disclosures, sentiment, competitor analysis) for watchlist stocks.
 
 #### Scenario: Successful fetch for all watchlist stocks
-- **WHEN** user runs `kktd fetch` with stocks in the watchlist
+- **WHEN** user runs `kabu fetch` with stocks in the watchlist
 - **THEN** system sends a structured prompt for each stock to the fetch LLM backend and saves results to `fetch_results` table
 
 #### Scenario: Fetch for specific tickers
-- **WHEN** user runs `kktd fetch 7203 6758`
+- **WHEN** user runs `kabu fetch 7203 6758`
 - **THEN** system fetches information only for the specified tickers (if they are in the watchlist)
 
 ### Requirement: Fetch results are structured

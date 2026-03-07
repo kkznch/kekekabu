@@ -1,4 +1,4 @@
-# keketrade (kktd)
+# keketrade (kabu)
 
 日本株投資のための CLI ツール。LLM を活用した銘柄評価パイプラインを提供します。
 
@@ -43,10 +43,10 @@ just build
 
 # 設定ファイルの初期化
 cargo run -- init
-# → ~/.config/kktd/config.toml と specs/template.yaml が生成される
+# → ~/.config/kabu/config.toml と specs/template.yaml が生成される
 ```
 
-`~/.config/kktd/config.toml` を編集して設定してください。
+`~/.config/kabu/config.toml` を編集して設定してください。
 
 ### `[api]` — API キー
 
@@ -75,7 +75,7 @@ cargo run -- init
 |------|-----------|------|
 | `path` | `specs/template.yaml` | 投資戦略 YAML ファイルのパス（config ディレクトリからの相対パスまたは絶対パス） |
 
-`kktd init` で生成される `template.yaml` をコピーして独自の戦略ファイルを作成し、ここで指定します。
+`kabu init` で生成される `template.yaml` をコピーして独自の戦略ファイルを作成し、ここで指定します。
 
 ### `[output]` — 出力設定
 
@@ -104,26 +104,26 @@ default_format = "json"
 
 ```sh
 # 日次パイプライン
-kktd scan --days 60
-kktd fetch
-kktd eval
-kktd execute --dry-run
-kktd report -o report.md
+kabu scan --days 60
+kabu fetch
+kabu eval
+kabu execute --dry-run
+kabu report -o report.md
 
 # ウォッチリスト管理
-kktd watchlist add 7203
-kktd watchlist list
-kktd watchlist remove 7203
+kabu watchlist add 7203
+kabu watchlist list
+kabu watchlist remove 7203
 
 # ポートフォリオ管理
-kktd portfolio buy 7203 --quantity 100 --price 2000
-kktd portfolio sell 7203 --quantity 50 --price 2200
-kktd portfolio positions
-kktd portfolio summary
-kktd portfolio trades
+kabu portfolio buy 7203 --quantity 100 --price 2000
+kabu portfolio sell 7203 --quantity 50 --price 2200
+kabu portfolio positions
+kabu portfolio summary
+kabu portfolio trades
 
 # 評価履歴
-kktd history --limit 20
+kabu history --limit 20
 ```
 
 出力はデフォルトで JSON（stdout）。`--format human` で人間向け表示に切り替え可能。
@@ -133,13 +133,13 @@ kktd history --limit 20
 
 ```sh
 # 朝: データ収集 → 評価
-kktd scan --days 60 && kktd fetch && kktd eval
+kabu scan --days 60 && kabu fetch && kabu eval
 
 # 市場オープン: 実行
-kktd execute
+kabu execute
 
 # 夕方: レポート生成
-kktd report -o ~/reports/$(date +%Y-%m-%d).md
+kabu report -o ~/reports/$(date +%Y-%m-%d).md
 ```
 
 ## 開発

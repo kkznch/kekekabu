@@ -1,9 +1,9 @@
 ## 1. Config & Init
 
 - [x] 1.1 AppConfig struct with [api], [llm], [spec], [output] sections
-- [x] 1.2 TOML config loading from ~/.config/kktd/config.toml
+- [x] 1.2 TOML config loading from ~/.config/kabu/config.toml
 - [x] 1.3 Environment variable overrides (JQUANTS_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY)
-- [x] 1.4 `kktd init` command with config.toml + specs/template.yaml generation
+- [x] 1.4 `kabu init` command with config.toml + specs/template.yaml generation
 - [x] 1.5 `--force` flag for config overwrite, template always regenerated
 
 ## 2. Database

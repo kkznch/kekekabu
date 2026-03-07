@@ -85,9 +85,12 @@ kktd report -o ~/reports/$(date +%Y-%m-%d).md
 ## Development
 
 ```sh
-cargo build                          # Build
-cargo test                           # Run all tests (32 tests, in-memory SQLite)
-RUST_LOG=debug cargo run -- scan     # Run with debug logging
+aqua install                         # Install tools (just, etc.)
+just build                           # Build
+just test                            # Run all tests (32 tests, in-memory SQLite)
+just lint                            # Clippy lints
+just ci                              # fmt-check + lint + test
+just --list                          # Show all available tasks
 ```
 
 ## Config

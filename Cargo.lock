@@ -910,7 +910,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "keketrade"
+name = "kekekabu"
 version = "0.1.0"
 dependencies = [
  "anyhow",

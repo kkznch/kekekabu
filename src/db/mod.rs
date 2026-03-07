@@ -9,9 +9,9 @@ use self::schema::ALL_SCHEMAS;
 
 fn db_path() -> std::path::PathBuf {
     if let Some(dir) = crate::config::config_dir() {
-        return dir.join("keketrade.db");
+        return dir.join("kekekabu.db");
     }
-    std::path::PathBuf::from("./keketrade.db")
+    std::path::PathBuf::from("./kekekabu.db")
 }
 
 pub async fn create_tables(conn: &Connection) -> Result<()> {

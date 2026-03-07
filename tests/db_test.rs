@@ -3,7 +3,7 @@ use tokio_rusqlite::Connection;
 
 async fn setup_db() -> Result<Connection> {
     let conn = Connection::open_in_memory().await?;
-    keketrade::db::create_tables(&conn).await?;
+    kekekabu::db::create_tables(&conn).await?;
     Ok(conn)
 }
 
@@ -11,13 +11,13 @@ async fn setup_db() -> Result<Connection> {
 async fn test_stock_save_and_lookup() -> Result<()> {
     let conn = setup_db().await?;
 
-    let id = keketrade::db::save_stock(&conn, "7203", "Toyota", Some("Automobile")).await?;
+    let id = kekekabu::db::save_stock(&conn, "7203", "Toyota", Some("Automobile")).await?;
     assert!(id > 0);
 
-    let found = keketrade::db::get_stock_id(&conn, "7203").await?;
+    let found = kekekabu::db::get_stock_id(&conn, "7203").await?;
     assert_eq!(found, Some(id));
 
-    let not_found = keketrade::db::get_stock_id(&conn, "9999").await?;
+    let not_found = kekekabu::db::get_stock_id(&conn, "9999").await?;
     assert_eq!(not_found, None);
 
     Ok(())
@@ -27,8 +27,8 @@ async fn test_stock_save_and_lookup() -> Result<()> {
 async fn test_stock_upsert() -> Result<()> {
     let conn = setup_db().await?;
 
-    let id1 = keketrade::db::save_stock(&conn, "7203", "Toyota", None).await?;
-    let id2 = keketrade::db::save_stock(&conn, "7203", "Toyota Motor", Some("Automobile")).await?;
+    let id1 = kekekabu::db::save_stock(&conn, "7203", "Toyota", None).await?;
+    let id2 = kekekabu::db::save_stock(&conn, "7203", "Toyota Motor", Some("Automobile")).await?;
     assert_eq!(id1, id2);
 
     Ok(())
@@ -38,15 +38,15 @@ async fn test_stock_upsert() -> Result<()> {
 async fn test_watchlist_crud() -> Result<()> {
     let conn = setup_db().await?;
 
-    keketrade::db::watchlist_add(&conn, "7203", Some("test")).await?;
-    keketrade::db::watchlist_add(&conn, "6758", None).await?;
+    kekekabu::db::watchlist_add(&conn, "7203", Some("test")).await?;
+    kekekabu::db::watchlist_add(&conn, "6758", None).await?;
 
-    let items = keketrade::db::watchlist_list(&conn).await?;
+    let items = kekekabu::db::watchlist_list(&conn).await?;
     assert_eq!(items.len(), 2);
 
-    keketrade::db::watchlist_remove(&conn, "7203").await?;
+    kekekabu::db::watchlist_remove(&conn, "7203").await?;
 
-    let items = keketrade::db::watchlist_list(&conn).await?;
+    let items = kekekabu::db::watchlist_list(&conn).await?;
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].ticker, "6758");
 
@@ -57,10 +57,10 @@ async fn test_watchlist_crud() -> Result<()> {
 async fn test_watchlist_idempotent() -> Result<()> {
     let conn = setup_db().await?;
 
-    keketrade::db::watchlist_add(&conn, "7203", None).await?;
-    keketrade::db::watchlist_add(&conn, "7203", None).await?;
+    kekekabu::db::watchlist_add(&conn, "7203", None).await?;
+    kekekabu::db::watchlist_add(&conn, "7203", None).await?;
 
-    let items = keketrade::db::watchlist_list(&conn).await?;
+    let items = kekekabu::db::watchlist_list(&conn).await?;
     assert_eq!(items.len(), 1);
 
     Ok(())
@@ -70,10 +70,10 @@ async fn test_watchlist_idempotent() -> Result<()> {
 async fn test_save_and_fetch_prices() -> Result<()> {
     let conn = setup_db().await?;
 
-    let stock_id = keketrade::db::save_stock(&conn, "7203", "Toyota", None).await?;
+    let stock_id = kekekabu::db::save_stock(&conn, "7203", "Toyota", None).await?;
 
     let quotes = vec![
-        keketrade::jquants::DailyQuote {
+        kekekabu::jquants::DailyQuote {
             code: "7203".to_string(),
             date: "2024-01-01".to_string(),
             open: Some(2000.0),
@@ -83,7 +83,7 @@ async fn test_save_and_fetch_prices() -> Result<()> {
             volume: Some(1000000.0),
             adjustment_close: Some(2050.0),
         },
-        keketrade::jquants::DailyQuote {
+        kekekabu::jquants::DailyQuote {
             code: "7203".to_string(),
             date: "2024-01-02".to_string(),
             open: Some(2050.0),
@@ -95,9 +95,9 @@ async fn test_save_and_fetch_prices() -> Result<()> {
         },
     ];
 
-    keketrade::db::save_prices(&conn, stock_id, &quotes).await?;
+    kekekabu::db::save_prices(&conn, stock_id, &quotes).await?;
 
-    let price_data = keketrade::db::fetch_price_data(&conn, stock_id).await?;
+    let price_data = kekekabu::db::fetch_price_data(&conn, stock_id).await?;
     assert_eq!(price_data.closes.len(), 2);
     assert!((price_data.closes[0] - 2050.0).abs() < 0.01);
     assert!((price_data.closes[1] - 2100.0).abs() < 0.01);
@@ -109,9 +109,9 @@ async fn test_save_and_fetch_prices() -> Result<()> {
 async fn test_prices_idempotent() -> Result<()> {
     let conn = setup_db().await?;
 
-    let stock_id = keketrade::db::save_stock(&conn, "7203", "Toyota", None).await?;
+    let stock_id = kekekabu::db::save_stock(&conn, "7203", "Toyota", None).await?;
 
-    let quotes = vec![keketrade::jquants::DailyQuote {
+    let quotes = vec![kekekabu::jquants::DailyQuote {
         code: "7203".to_string(),
         date: "2024-01-01".to_string(),
         open: Some(2000.0),
@@ -122,10 +122,10 @@ async fn test_prices_idempotent() -> Result<()> {
         adjustment_close: None,
     }];
 
-    keketrade::db::save_prices(&conn, stock_id, &quotes).await?;
-    keketrade::db::save_prices(&conn, stock_id, &quotes).await?;
+    kekekabu::db::save_prices(&conn, stock_id, &quotes).await?;
+    kekekabu::db::save_prices(&conn, stock_id, &quotes).await?;
 
-    let price_data = keketrade::db::fetch_price_data(&conn, stock_id).await?;
+    let price_data = kekekabu::db::fetch_price_data(&conn, stock_id).await?;
     assert_eq!(price_data.closes.len(), 1);
 
     Ok(())
@@ -135,9 +135,9 @@ async fn test_prices_idempotent() -> Result<()> {
 async fn test_evaluation_save_and_list() -> Result<()> {
     let conn = setup_db().await?;
 
-    let stock_id = keketrade::db::save_stock(&conn, "7203", "Toyota", None).await?;
+    let stock_id = kekekabu::db::save_stock(&conn, "7203", "Toyota", None).await?;
 
-    let eval_id = keketrade::db::save_evaluation(
+    let eval_id = kekekabu::db::save_evaluation(
         &conn,
         stock_id,
         "Buy",
@@ -151,7 +151,7 @@ async fn test_evaluation_save_and_list() -> Result<()> {
 
     assert!(eval_id > 0);
 
-    let evals = keketrade::db::list_evaluations(&conn, 10).await?;
+    let evals = kekekabu::db::list_evaluations(&conn, 10).await?;
     assert_eq!(evals.len(), 1);
     assert_eq!(evals[0].ticker, "7203");
     assert_eq!(evals[0].decision, "Buy");

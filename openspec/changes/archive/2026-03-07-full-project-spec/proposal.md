@@ -1,6 +1,6 @@
 ## Why
 
-keketrade (kabu) は日本株投資のための CLI ツールで、LLM を活用した銘柄評価パイプライン（scan → fetch → eval → execute → report）を提供する。旧リポジトリ kekestock から Rust 2024 edition で全面移植し、5コマンドパイプライン + ポートフォリオ管理 + 安全機構を備えた投資支援ツールとして完成させた。全仕様を OpenSpec でドキュメント化する。
+kekekabu (kabu) は日本株投資のための CLI ツールで、LLM を活用した銘柄評価パイプライン（scan → fetch → eval → execute → report）を提供する。旧リポジトリ kekestock から Rust 2024 edition で全面移植し、5コマンドパイプライン + ポートフォリオ管理 + 安全機構を備えた投資支援ツールとして完成させた。全仕様を OpenSpec でドキュメント化する。
 
 ## What Changes
 
@@ -41,6 +41,6 @@ keketrade (kabu) は日本株投資のための CLI ツールで、LLM を活用
 - **コードベース**: src/ 以下 18 ファイル（main.rs, lib.rs, config.rs, jquants.rs, indicators.rs, output.rs, portfolio.rs, circuit_breaker.rs, spec.rs, db/*, llm/*, cmd/*）
 - **外部 API**: J-Quants V2 API, Anthropic Messages API, Google Gemini generateContent API
 - **外部 CLI**: claude CLI, gemini CLI
-- **データベース**: SQLite（~/.config/kabu/keketrade.db）7 テーブル
+- **データベース**: SQLite（~/.config/kabu/kekekabu.db）7 テーブル
 - **設定**: ~/.config/kabu/config.toml, ~/.config/kabu/specs/*.yaml
 - **依存クレート**: clap, tokio, tokio-rusqlite, reqwest, serde, rust_decimal, rust_ti, chrono, anyhow, tracing, sha2, async-trait, which 他

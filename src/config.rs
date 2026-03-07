@@ -77,7 +77,7 @@ pub fn config_dir() -> Option<PathBuf> {
 }
 
 const CONFIG_TEMPLATE: &str = r#"# kabu configuration
-# See: https://github.com/kkznch/keketrade
+# See: https://github.com/kkznch/kekekabu
 
 [api]
 # J-Quants API key (https://jpx.gitbook.io/j-quants-ja)

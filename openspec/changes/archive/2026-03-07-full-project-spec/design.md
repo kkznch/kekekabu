@@ -1,6 +1,6 @@
 ## Context
 
-keketrade は日本株専用の投資支援 CLI ツール。旧リポジトリ kekestock（18 コマンド）を Rust 2024 edition で再設計し、5 コマンドパイプライン + サブコマンド構成に整理した。
+kekekabu は日本株専用の投資支援 CLI ツール。旧リポジトリ kekestock（18 コマンド）を Rust 2024 edition で再設計し、5 コマンドパイプライン + サブコマンド構成に整理した。
 
 現在の実装は Phase 1〜3 が完了しており、全コマンドが動作する状態。Tachibana Securities API 連携のみスタブ（API アクセス待ち）。
 

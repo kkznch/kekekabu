@@ -41,7 +41,7 @@ src/
 ## Key Design Decisions
 
 - **JP market only** — no US stock support
-- **SQLite** via `tokio-rusqlite` (bundled). DB at `~/.config/kabu/keketrade.db`
+- **SQLite** via `tokio-rusqlite` (bundled). DB at `~/.config/kabu/kekekabu.db`
 - **Money as TEXT** — `rust_decimal::Decimal` for precision
 - **Idempotent writes** — `INSERT OR IGNORE` / `ON CONFLICT` everywhere
 - **Default JSON output** — `--format human` for table display

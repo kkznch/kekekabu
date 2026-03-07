@@ -9,7 +9,7 @@ The system SHALL use SQLite (tokio-rusqlite, bundled) with 7 tables: stocks, pri
 
 #### Scenario: Database initialization
 - **WHEN** application starts (any command except init)
-- **THEN** system creates the database file at ~/.config/kabu/keketrade.db and ensures all 7 tables exist
+- **THEN** system creates the database file at ~/.config/kabu/kekekabu.db and ensures all 7 tables exist
 
 ### Requirement: Stocks table
 The system SHALL store stock master data (ticker, name, sector) with ticker as unique key.

@@ -1,4 +1,4 @@
-# keketrade (kabu)
+# kekekabu (kabu)
 
 日本株投資のための CLI ツール。LLM を活用した銘柄評価パイプラインを提供します。
 

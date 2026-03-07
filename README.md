@@ -28,7 +28,8 @@ scan → fetch → eval → execute → report
 | `watchlist` | R/W | - | - |
 | `portfolio` | R/W | - | - |
 | `history` | R | - | - |
-| `init` | - | - | - |
+| `config init` | - | - | - |
+| `config validate` | - | - | - |
 
 > R = 読み取り、W = 書き込み、R/W = 両方
 
@@ -42,8 +43,11 @@ aqua install
 just build
 
 # 設定ファイルの初期化
-cargo run -- init
+cargo run -- config init
 # → ~/.config/kabu/config.toml と specs/template.toml が生成される
+
+# 設定のバリデーション
+cargo run -- config validate
 ```
 
 `~/.config/kabu/config.toml` を編集して設定してください。

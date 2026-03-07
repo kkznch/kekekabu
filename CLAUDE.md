@@ -14,7 +14,7 @@ All phases implemented. Tachibana Securities API integration is stubbed (pending
 src/
   main.rs            CLI entry point (clap derive)
   lib.rs             Library root for integration tests
-  config.rs          TOML config (~/.config/kabu/config.toml) + env overrides
+  config.rs          TOML config (~/.config/kabu/config.toml) + env overrides + validation
   jquants.rs         J-Quants V2 API client
   indicators.rs      TA engine (RSI, MACD, BB, SMA, EMA, ATR, volume MA)
   output.rs          JSON (default) / human output formatting
@@ -36,6 +36,7 @@ src/
     execute.rs       Trade execution (circuit breaker + order logic)
     report.rs        Markdown report generation
     watchlist.rs     Watchlist CRUD
+    config.rs        Config init + validate handlers
 ```
 
 ## Key Design Decisions
@@ -57,6 +58,11 @@ kabu fetch                           # Gather info via Gemini
 kabu eval                            # LLM evaluation (Buy/Hold/Avoid)
 kabu execute --dry-run               # Execute trades (dry run)
 kabu report -o report.md             # Generate Markdown report
+
+# Config
+kabu config init                     # Initialize config + spec template
+kabu config init --force             # Overwrite existing config
+kabu config validate                 # Validate config + spec
 
 # Management
 kabu watchlist add 7203              # Add to watchlist
@@ -87,7 +93,7 @@ kabu report -o ~/reports/$(date +%Y-%m-%d).md
 ```sh
 aqua install                         # Install tools (just, etc.)
 just build                           # Build
-just test                            # Run all tests (32 tests, in-memory SQLite)
+just test                            # Run all tests (40 tests, in-memory SQLite)
 just lint                            # Clippy lints
 just ci                              # fmt-check + lint + test
 just --list                          # Show all available tasks

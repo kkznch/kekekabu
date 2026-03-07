@@ -27,12 +27,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Initialize config directory and template
-    Init {
-        /// Overwrite existing config
-        #[arg(long)]
-        force: bool,
-    },
+    /// Manage configuration
+    #[command(subcommand)]
+    Config(ConfigCommand),
     /// Fetch price data and compute TA indicators for watchlist stocks
     Scan {
         /// Number of days of historical data to fetch
@@ -127,6 +124,18 @@ enum PortfolioCommand {
     },
 }
 
+#[derive(Subcommand)]
+enum ConfigCommand {
+    /// Initialize config directory and template
+    Init {
+        /// Overwrite existing config
+        #[arg(long)]
+        force: bool,
+    },
+    /// Validate config and investment spec
+    Validate,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -140,9 +149,12 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    // init doesn't need config or DB
-    if let Command::Init { force } = cli.command {
-        config::init_config(force)?;
+    // config subcommands don't need DB
+    if let Command::Config(sub) = cli.command {
+        match sub {
+            ConfigCommand::Init { force } => cmd::config::init(force)?,
+            ConfigCommand::Validate => cmd::config::validate()?,
+        }
         return Ok(());
     }
 
@@ -150,7 +162,7 @@ async fn main() -> Result<()> {
     let conn = db::init_db().await?;
 
     match cli.command {
-        Command::Init { .. } => unreachable!(),
+        Command::Config(_) => unreachable!(),
         Command::Scan { days } => {
             let results = cmd::scan::run(&conn, &config, days).await?;
             output::print_list_output(&results, cli.format);

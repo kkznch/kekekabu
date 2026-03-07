@@ -40,12 +40,39 @@ impl Default for LlmConfig {
     }
 }
 
+const VALID_BACKENDS: &[&str] = &["cli-gemini", "cli-claude", "api-gemini", "api-anthropic"];
+
 impl LlmConfig {
     fn default_fetch() -> String {
         "cli-gemini".to_string()
     }
     fn default_eval() -> String {
         "cli-claude".to_string()
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        let mut errors = Vec::new();
+
+        if !VALID_BACKENDS.contains(&self.fetch.as_str()) {
+            errors.push(format!(
+                "llm.fetch = \"{}\" is invalid. Valid: {}",
+                self.fetch,
+                VALID_BACKENDS.join(", ")
+            ));
+        }
+        if !VALID_BACKENDS.contains(&self.eval.as_str()) {
+            errors.push(format!(
+                "llm.eval = \"{}\" is invalid. Valid: {}",
+                self.eval,
+                VALID_BACKENDS.join(", ")
+            ));
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!("Invalid config:\n  - {}", errors.join("\n  - "));
+        }
     }
 }
 
@@ -196,6 +223,7 @@ impl AppConfig {
     pub fn load() -> Result<Self> {
         let mut config = Self::load_from_file()?;
         config.apply_env_overrides();
+        config.llm.validate()?;
         Ok(config)
     }
 
@@ -238,5 +266,35 @@ impl AppConfig {
                 key_name
             )
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_valid_backends() {
+        let llm = LlmConfig {
+            fetch: "cli-gemini".to_string(),
+            eval: "api-anthropic".to_string(),
+            eval_model: None,
+            fetch_model: None,
+        };
+        assert!(llm.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_invalid_backends() {
+        let llm = LlmConfig {
+            fetch: "invalid-backend".to_string(),
+            eval: "also-invalid".to_string(),
+            eval_model: None,
+            fetch_model: None,
+        };
+        let err = llm.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("llm.fetch"));
+        assert!(msg.contains("llm.eval"));
     }
 }

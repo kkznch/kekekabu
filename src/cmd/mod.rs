@@ -1,3 +1,4 @@
+pub mod config;
 pub mod eval;
 pub mod execute;
 pub mod fetch;

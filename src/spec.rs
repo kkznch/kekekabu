@@ -15,12 +15,21 @@ pub struct InvestmentSpec {
     pub execution: ExecutionConfig,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UniverseFilter {
     #[serde(default = "default_min_market_cap")]
     pub min_market_cap: f64,
     #[serde(default = "default_min_daily_volume")]
     pub min_daily_volume: f64,
+}
+
+impl Default for UniverseFilter {
+    fn default() -> Self {
+        Self {
+            min_market_cap: default_min_market_cap(),
+            min_daily_volume: default_min_daily_volume(),
+        }
+    }
 }
 
 fn default_min_market_cap() -> f64 {
@@ -78,8 +87,10 @@ pub fn load_spec(path: &str) -> Result<InvestmentSpec> {
     let path = resolve_spec_path(path);
     let content = std::fs::read_to_string(&path)
         .with_context(|| format!("Failed to read spec file: {}", path.display()))?;
-    toml::from_str(&content)
-        .with_context(|| format!("Failed to parse spec TOML: {}", path.display()))
+    let spec: InvestmentSpec = toml::from_str(&content)
+        .with_context(|| format!("Failed to parse spec TOML: {}", path.display()))?;
+    spec.validate()?;
+    Ok(spec)
 }
 
 pub fn spec_hash(path: &str) -> Result<String> {
@@ -107,6 +118,64 @@ fn resolve_spec_path(path: &str) -> std::path::PathBuf {
 }
 
 impl InvestmentSpec {
+    pub fn validate(&self) -> Result<()> {
+        let mut errors = Vec::new();
+
+        if self.name.is_empty() {
+            errors.push("name must not be empty".to_string());
+        }
+
+        // Universe
+        if self.universe.min_market_cap <= 0.0 {
+            errors.push(format!(
+                "universe.min_market_cap must be positive, got {}",
+                self.universe.min_market_cap
+            ));
+        }
+        if self.universe.min_daily_volume <= 0.0 {
+            errors.push(format!(
+                "universe.min_daily_volume must be positive, got {}",
+                self.universe.min_daily_volume
+            ));
+        }
+
+        // Scoring factors
+        for (i, f) in self.scoring.factors.iter().enumerate() {
+            if f.weight <= 0.0 || f.weight > 1.0 {
+                errors.push(format!(
+                    "scoring.factors[{}].weight must be in (0.0, 1.0], got {}",
+                    i, f.weight
+                ));
+            }
+        }
+
+        // Execution
+        if self.execution.max_position_size <= 0.0 || self.execution.max_position_size > 1.0 {
+            errors.push(format!(
+                "execution.max_position_size must be in (0.0, 1.0], got {}",
+                self.execution.max_position_size
+            ));
+        }
+        if self.execution.stop_loss >= 0.0 {
+            errors.push(format!(
+                "execution.stop_loss must be negative, got {}",
+                self.execution.stop_loss
+            ));
+        }
+        if self.execution.trailing_stop <= 0.0 || self.execution.trailing_stop > 1.0 {
+            errors.push(format!(
+                "execution.trailing_stop must be in (0.0, 1.0], got {}",
+                self.execution.trailing_stop
+            ));
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!("Invalid investment spec:\n  - {}", errors.join("\n  - "));
+        }
+    }
+
     pub fn to_prompt_section(&self) -> String {
         let mut s = String::new();
         s.push_str(&format!("## Investment Spec: {} (v{})\n\n", self.name, self.version));
@@ -165,6 +234,57 @@ trailing_stop = 0.15
         assert_eq!(spec.name, "Test Strategy");
         assert_eq!(spec.scoring.factors.len(), 2);
         assert!((spec.execution.stop_loss - (-0.07)).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_validate_valid_spec() {
+        let spec = InvestmentSpec {
+            name: "Test".to_string(),
+            version: "1.0".to_string(),
+            universe: UniverseFilter::default(),
+            scoring: ScoringConfig {
+                factors: vec![ScoringFactor {
+                    name: "PBR".to_string(),
+                    weight: 0.5,
+                    description: String::new(),
+                }],
+            },
+            execution: ExecutionConfig::default(),
+        };
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_invalid_spec() {
+        let spec = InvestmentSpec {
+            name: String::new(),
+            version: String::new(),
+            universe: UniverseFilter {
+                min_market_cap: -1.0,
+                min_daily_volume: 0.0,
+            },
+            scoring: ScoringConfig {
+                factors: vec![ScoringFactor {
+                    name: "Bad".to_string(),
+                    weight: 1.5,
+                    description: String::new(),
+                }],
+            },
+            execution: ExecutionConfig {
+                max_position_size: 2.0,
+                stop_loss: 0.1,
+                trailing_stop: -0.5,
+            },
+        };
+        let err = spec.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("name must not be empty"));
+        assert!(msg.contains("min_market_cap must be positive"));
+        assert!(msg.contains("min_daily_volume must be positive"));
+        assert!(msg.contains("weight must be in"));
+        assert!(msg.contains("max_position_size must be in"));
+        assert!(msg.contains("stop_loss must be negative"));
+        assert!(msg.contains("trailing_stop must be in"));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 ## Purpose
 
-TOML 設定ファイルと環境変数によるアプリケーション設定管理、および init コマンドによる初期設定・テンプレート生成。
+TOML 設定ファイルと環境変数によるアプリケーション設定管理、および config サブコマンドによる初期設定・バリデーション・テンプレート生成。
 
 ## Requirements
 
@@ -26,24 +26,35 @@ TOML 設定ファイルと環境変数によるアプリケーション設定管
 - **WHEN** 環境変数が空文字列に設定されている場合
 - **THEN** 環境変数を無視し config.toml の値を使用する
 
-### Requirement: init コマンドで設定と Spec テンプレートを生成
-システムは SHALL `kabu init` 実行時に config.toml と specs/template.toml を生成する。
+### Requirement: config init コマンドで設定と Spec テンプレートを生成
+システムは SHALL `kabu config init` 実行時に config.toml と specs/template.toml を生成する。
 
 #### Scenario: 初回の init
-- **WHEN** 既存の設定がない状態で `kabu init` を実行した場合
+- **WHEN** 既存の設定がない状態で `kabu config init` を実行した場合
 - **THEN** API キーのプレースホルダー付き config.toml と specs/template.toml を作成する
 
 #### Scenario: 既存設定がある場合
-- **WHEN** 既存の config.toml がある状態で `kabu init` を実行した場合
+- **WHEN** 既存の config.toml がある状態で `kabu config init` を実行した場合
 - **THEN** `--force` での上書きを促すエラーを返す
 
 #### Scenario: 強制上書き
-- **WHEN** `kabu init --force` を実行した場合
+- **WHEN** `kabu config init --force` を実行した場合
 - **THEN** config.toml を上書きし specs/template.toml を再生成する
 
 ### Requirement: Spec テンプレートは常に上書き
 システムは SHALL init 時に `specs/template.toml` を常に上書きする。ユーザーのカスタム戦略は別ファイルで管理する想定。
 
 #### Scenario: テンプレートの再生成
-- **WHEN** `kabu init`（または `--force`）を実行した場合
+- **WHEN** `kabu config init`（または `--force`）を実行した場合
 - **THEN** template.toml の存在有無にかかわらず最新版を書き出す
+
+### Requirement: config validate コマンドで設定をバリデーション
+システムは SHALL `kabu config validate` 実行時に config.toml と投資 Spec TOML の両方をバリデーションする。
+
+#### Scenario: 正常なバリデーション
+- **WHEN** config.toml と Spec TOML が両方とも有効な場合
+- **THEN** 「Config: OK」「Spec: OK」「All validations passed.」を stderr に出力する
+
+#### Scenario: 設定に問題がある場合
+- **WHEN** LLM バックエンド名が無効、または Spec の値が範囲外の場合
+- **THEN** 具体的なエラーメッセージと共にエラーを返す

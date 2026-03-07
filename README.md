@@ -81,6 +81,51 @@ cargo run -- config validate
 
 `kabu config init` で生成される `template.toml` をコピーして独自の戦略ファイルを作成し、ここで指定します。
 
+### 投資 Spec（戦略ファイル）の書き方
+
+投資 Spec は TOML 形式で記述し、`discover` と `eval` の LLM プロンプトにそのまま埋め込まれます。
+**必須フィールドは `name` のみ**で、それ以外のセクション構造は自由です。LLM が読んで投資判断の基準にします。
+
+```toml
+name = "JP Core Value & Quality"
+version = "1.0.0"
+
+[universe.liquidity]
+min_avg_daily_volume_3m = 500_000_000  # 5億円
+min_market_cap = 30_000_000_000        # 300億円
+
+[universe.financial]
+min_equity_ratio = 40.0
+max_debt_to_equity = 1.0
+
+[quantitative.value]
+max_pbr = 1.2
+max_per = 15.0
+min_dividend_yield = 3.0
+
+[quantitative.quality]
+min_roe = 8.0
+operating_margin_trend = "increasing"
+
+[qualitative]
+focus_points = """
+1. Capital Efficiency: 東証の改善要請に対する具体的な還元策
+2. Competitive Moat: 模倣困難な強み、または高い国内シェア
+3. Catalyst: 半年以内に株価を動かすきっかけ
+"""
+
+[execution]
+max_position_size = 0.05
+stop_loss = -0.07
+trailing_stop = 0.15
+```
+
+- `name`（必須）: 戦略名。ログ表示や識別に使用
+- それ以外のセクション・キーは自由に定義可能
+- TOML ファイル全体がそのまま LLM に渡されるため、コメントも LLM への指示として機能します
+
+`kabu config validate` で TOML 構文と `name` の存在をチェックできます。
+
 ### 設定例
 
 ```toml

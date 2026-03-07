@@ -11,10 +11,26 @@ scan → fetch → eval → execute → report
 | コマンド | 概要 |
 |---------|------|
 | `scan` | J-Quants API から価格データを取得し、テクニカル指標（RSI, MACD, BB, SMA 等）を算出 |
-| `fetch` | Gemini CLI で最新ニュース・開示・センチメント等の情報を収集 |
+| `fetch` | LLM で最新ニュース・開示・センチメント等の情報を収集 |
 | `eval` | LLM（Claude / Gemini）で投資判断（Buy / Hold / Avoid）を生成 |
 | `execute` | サーキットブレーカー確認後、売買シグナルを出力 |
 | `report` | 評価結果を Markdown レポートとして出力 |
+
+### 依存関係マトリクス
+
+| コマンド | DB | LLM | 外部 API |
+|---------|:--:|:---:|:--------:|
+| `scan` | W | - | J-Quants |
+| `fetch` | R/W | ✓ | - |
+| `eval` | R/W | ✓ | - |
+| `execute` | R | - | - |
+| `report` | R | - | - |
+| `watchlist` | R/W | - | - |
+| `portfolio` | R/W | - | - |
+| `history` | R | - | - |
+| `init` | - | - | - |
+
+> R = 読み取り、W = 書き込み、R/W = 両方
 
 ## セットアップ
 

@@ -39,7 +39,7 @@ pub async fn run(
 ) -> Result<Vec<EvalResult>> {
     let backend = llm::create_backend(
         &config.llm.eval,
-        config.api.anthropic_api_key.as_deref(),
+        &config.api,
         config.llm.eval_model.as_deref(),
     )?;
 

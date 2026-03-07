@@ -18,6 +18,7 @@ pub struct AppConfig {
 pub struct ApiConfig {
     pub jquants_api_key: Option<String>,
     pub anthropic_api_key: Option<String>,
+    pub gemini_api_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -107,8 +108,11 @@ const CONFIG_TEMPLATE: &str = r#"# kktd configuration
 # Anthropic API key (for api-anthropic backend)
 # anthropic_api_key = ""
 
+# Google Gemini API key (for api-gemini backend)
+# gemini_api_key = ""
+
 [llm]
-# LLM backend for fetch command (cli-gemini, cli-claude, api-anthropic)
+# LLM backend for fetch command (cli-gemini, cli-claude, api-gemini, api-anthropic)
 fetch = "cli-gemini"
 
 # LLM backend for eval command
@@ -232,6 +236,9 @@ impl AppConfig {
         }
         if let Some(v) = Self::env_non_empty("ANTHROPIC_API_KEY") {
             self.api.anthropic_api_key = Some(v);
+        }
+        if let Some(v) = Self::env_non_empty("GEMINI_API_KEY") {
+            self.api.gemini_api_key = Some(v);
         }
     }
 

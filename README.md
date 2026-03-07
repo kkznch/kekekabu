@@ -38,14 +38,15 @@ cargo run -- init
 |------|------|------|
 | `jquants_api_key` | [J-Quants API](https://jpx.gitbook.io/j-quants-ja) のキー。`scan` で価格データ取得に使用 | `scan` 使用時 |
 | `anthropic_api_key` | Anthropic API キー。`llm.eval = "api-anthropic"` の場合に使用 | `api-anthropic` 使用時 |
+| `gemini_api_key` | Google Gemini API キー。`llm.fetch = "api-gemini"` の場合に使用 | `api-gemini` 使用時 |
 
-環境変数 `JQUANTS_API_KEY`, `ANTHROPIC_API_KEY` でも設定可能です（config より優先）。
+環境変数 `JQUANTS_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` でも設定可能です（config より優先）。
 
 ### `[llm]` — LLM バックエンド
 
 | キー | デフォルト | 説明 |
 |------|-----------|------|
-| `fetch` | `cli-gemini` | `fetch` コマンドで使う LLM。`cli-gemini` / `cli-claude` / `api-anthropic` |
+| `fetch` | `cli-gemini` | `fetch` コマンドで使う LLM。`cli-gemini` / `cli-claude` / `api-gemini` / `api-anthropic` |
 | `eval` | `cli-claude` | `eval` コマンドで使う LLM。同上 |
 | `fetch_model` | (なし) | `fetch` で使うモデル名の上書き |
 | `eval_model` | (なし) | `eval` で使うモデル名の上書き |
@@ -141,7 +142,7 @@ just --list         # タスク一覧
 - **言語**: Rust 2024 edition
 - **DB**: SQLite（tokio-rusqlite, bundled）
 - **API**: J-Quants V2
-- **LLM**: Anthropic API / Claude CLI / Gemini CLI
+- **LLM**: Anthropic API / Gemini API / Claude CLI / Gemini CLI
 - **テクニカル分析**: rust_ti（RSI, MACD, BB, SMA, EMA, ATR）
 - **金額精度**: rust_decimal（TEXT 保存）
 

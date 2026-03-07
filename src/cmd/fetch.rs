@@ -38,7 +38,7 @@ pub async fn run(
 ) -> Result<Vec<FetchSummary>> {
     let backend = llm::create_backend(
         &config.llm.fetch,
-        None,
+        &config.api,
         config.llm.fetch_model.as_deref(),
     )?;
 

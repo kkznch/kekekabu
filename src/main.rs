@@ -27,6 +27,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Initialize config directory and template
+    Init {
+        /// Overwrite existing config
+        #[arg(long)]
+        force: bool,
+    },
     /// Fetch price data and compute TA indicators for watchlist stocks
     Scan {
         /// Number of days of historical data to fetch
@@ -133,10 +139,18 @@ async fn main() -> Result<()> {
         .init();
 
     let cli = Cli::parse();
+
+    // init doesn't need config or DB
+    if let Command::Init { force } = cli.command {
+        config::init_config(force)?;
+        return Ok(());
+    }
+
     let config = config::AppConfig::load()?;
     let conn = db::init_db().await?;
 
     match cli.command {
+        Command::Init { .. } => unreachable!(),
         Command::Scan { days } => {
             let results = cmd::scan::run(&conn, &config, days).await?;
             output::print_list_output(&results, cli.format);

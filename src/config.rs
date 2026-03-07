@@ -97,6 +97,114 @@ pub fn config_dir() -> Option<PathBuf> {
     Some(dir)
 }
 
+const CONFIG_TEMPLATE: &str = r#"# kktd configuration
+# See: https://github.com/kkznch/keketrade
+
+[api]
+# J-Quants API key (https://jpx.gitbook.io/j-quants-ja)
+# jquants_api_key = ""
+
+# Anthropic API key (for api-anthropic backend)
+# anthropic_api_key = ""
+
+[llm]
+# LLM backend for fetch command (cli-gemini, cli-claude, api-anthropic)
+fetch = "cli-gemini"
+
+# LLM backend for eval command
+eval = "cli-claude"
+
+# Optional model overrides
+# eval_model = ""
+# fetch_model = ""
+
+[spec]
+# Investment spec YAML file path (relative to config dir or absolute)
+path = "specs/default.yaml"
+
+[output]
+# Default output format (json or human)
+default_format = "json"
+"#;
+
+const SPEC_TEMPLATE: &str = r#"# Investment Spec: JP Core Value & Quality
+# This file defines the investment strategy for kktd eval.
+
+name: "JP Core Value & Quality"
+version: "1.0"
+
+universe:
+  # Minimum market cap (JPY)
+  min_market_cap: 10000000000   # 100 億円
+  # Minimum average daily trading volume (shares)
+  min_daily_volume: 100000
+
+scoring:
+  factors:
+    - name: "PBR"
+      weight: 0.2
+      description: "Price to Book Ratio. Lower is better (value)."
+    - name: "PER"
+      weight: 0.2
+      description: "Price to Earnings Ratio. Lower is better (value)."
+    - name: "ROE"
+      weight: 0.25
+      description: "Return on Equity. Higher is better (quality)."
+    - name: "Dividend Yield"
+      weight: 0.15
+      description: "Annual dividend yield. Higher is better (income)."
+    - name: "Technical Momentum"
+      weight: 0.2
+      description: "RSI, MACD, moving average trends."
+
+execution:
+  # Max position size as fraction of total portfolio
+  max_position_size: 0.05       # 5%
+  # Stop loss trigger (negative = loss)
+  stop_loss: -0.07              # -7%
+  # Trailing stop from high water mark
+  trailing_stop: 0.15           # 15%
+"#;
+
+pub fn init_config(force: bool) -> Result<()> {
+    let dir = config_dir().context("Failed to determine config directory")?;
+    let config_path = dir.join("config.toml");
+    let spec_dir = dir.join("specs");
+    let spec_path = spec_dir.join("default.yaml");
+
+    if config_path.exists() && !force {
+        anyhow::bail!(
+            "Config already exists: {}\nUse --force to overwrite.",
+            config_path.display()
+        );
+    }
+
+    // Write config
+    let overwritten = config_path.exists();
+    std::fs::write(&config_path, CONFIG_TEMPLATE)
+        .with_context(|| format!("Failed to write config: {}", config_path.display()))?;
+
+    if overwritten {
+        eprintln!("Config overwritten: {}", config_path.display());
+    } else {
+        eprintln!("Config created: {}", config_path.display());
+    }
+
+    // Write spec template
+    std::fs::create_dir_all(&spec_dir)
+        .with_context(|| format!("Failed to create specs dir: {}", spec_dir.display()))?;
+
+    if !spec_path.exists() || force {
+        std::fs::write(&spec_path, SPEC_TEMPLATE)
+            .with_context(|| format!("Failed to write spec: {}", spec_path.display()))?;
+        eprintln!("Spec created: {}", spec_path.display());
+    }
+
+    eprintln!("Edit API keys: {}", config_path.display());
+
+    Ok(())
+}
+
 impl AppConfig {
     pub fn load() -> Result<Self> {
         let mut config = Self::load_from_file()?;

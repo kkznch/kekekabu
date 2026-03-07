@@ -66,7 +66,7 @@ impl Default for SpecConfig {
 
 impl SpecConfig {
     fn default_path() -> String {
-        "specs/default.yaml".to_string()
+        "specs/template.yaml".to_string()
     }
 }
 
@@ -120,7 +120,7 @@ eval = "cli-claude"
 
 [spec]
 # Investment spec YAML file path (relative to config dir or absolute)
-path = "specs/default.yaml"
+path = "specs/template.yaml"
 
 [output]
 # Default output format (json or human)
@@ -170,7 +170,7 @@ pub fn init_config(force: bool) -> Result<()> {
     let dir = config_dir().context("Failed to determine config directory")?;
     let config_path = dir.join("config.toml");
     let spec_dir = dir.join("specs");
-    let spec_path = spec_dir.join("default.yaml");
+    let spec_path = spec_dir.join("template.yaml");
 
     if config_path.exists() && !force {
         anyhow::bail!(
@@ -194,11 +194,9 @@ pub fn init_config(force: bool) -> Result<()> {
     std::fs::create_dir_all(&spec_dir)
         .with_context(|| format!("Failed to create specs dir: {}", spec_dir.display()))?;
 
-    if !spec_path.exists() || force {
-        std::fs::write(&spec_path, SPEC_TEMPLATE)
-            .with_context(|| format!("Failed to write spec: {}", spec_path.display()))?;
-        eprintln!("Spec created: {}", spec_path.display());
-    }
+    std::fs::write(&spec_path, SPEC_TEMPLATE)
+        .with_context(|| format!("Failed to write spec: {}", spec_path.display()))?;
+    eprintln!("Spec template written: {}", spec_path.display());
 
     eprintln!("Edit API keys: {}", config_path.display());
 

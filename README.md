@@ -79,13 +79,7 @@ cargo run -- config validate
 |------|-----------|------|
 | `path` | `specs/template.toml` | 投資戦略ファイルのパス（config ディレクトリからの相対パスまたは絶対パス） |
 
-`kabu init` で生成される `template.toml` をコピーして独自の戦略ファイルを作成し、ここで指定します。
-
-### `[output]` — 出力設定
-
-| キー | デフォルト | 説明 |
-|------|-----------|------|
-| `default_format` | `json` | デフォルトの出力形式。`json` または `human` |
+`kabu config init` で生成される `template.toml` をコピーして独自の戦略ファイルを作成し、ここで指定します。
 
 ### 設定例
 
@@ -99,9 +93,6 @@ eval = "cli-claude"
 
 [spec]
 path = "specs/my-strategy.toml"
-
-[output]
-default_format = "json"
 ```
 
 ## 使い方

@@ -5,7 +5,7 @@ TOML 設定ファイルと環境変数によるアプリケーション設定管
 ## Requirements
 
 ### Requirement: ~/.config/kabu/config.toml による設定管理
-システムは SHALL `~/.config/kabu/config.toml` から [api], [llm], [spec], [output] セクションの設定を読み込む。
+システムは SHALL `~/.config/kabu/config.toml` から [api], [llm], [spec] セクションの設定を読み込む。
 
 #### Scenario: 設定ファイルの正常読み込み
 - **WHEN** 有効な TOML 形式の config.toml が存在する場合

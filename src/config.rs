@@ -130,10 +130,6 @@ eval = "cli-claude"
 [spec]
 # Investment spec file path (relative to config dir or absolute)
 path = "specs/template.toml"
-
-[output]
-# Default output format (json or human)
-default_format = "json"
 "#;
 
 const SPEC_TEMPLATE: &str = r#"# Investment Spec: JP Core Value & Quality

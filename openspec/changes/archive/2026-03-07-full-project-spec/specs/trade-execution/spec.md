@@ -1,38 +1,42 @@
-## ADDED Requirements
+## Purpose
 
-### Requirement: Execute processes today's evaluations
-The system SHALL process today's evaluations and generate buy/sell signals based on decision and score.
+評価結果に基づく売買シグナル出力。サーキットブレーカーで安全確認後に、decision とスコアから売買アクションを生成する。
 
-#### Scenario: Buy signal for high-score Buy
-- **WHEN** evaluation has decision="Buy" and score >= 70
-- **THEN** system generates a buy signal action
+## Requirements
 
-#### Scenario: Buy signal skipped for low-score Buy
-- **WHEN** evaluation has decision="Buy" and score < 70
-- **THEN** system skips the buy signal with explanation "score too low"
+### Requirement: 当日の評価結果を処理
+システムは SHALL 当日の evaluations を処理し、decision とスコアに基づいて売買シグナルを生成する。
 
-#### Scenario: Sell signal for strong Avoid
-- **WHEN** evaluation has decision="Avoid" and score <= 30
-- **THEN** system generates a sell signal action to review existing positions
+#### Scenario: 高スコア Buy の買いシグナル
+- **WHEN** evaluation の decision="Buy" かつ score >= 70 の場合
+- **THEN** 買いシグナルアクションを生成する
 
-#### Scenario: Hold action
-- **WHEN** evaluation has decision="Hold" or does not meet buy/sell thresholds
-- **THEN** system generates a hold action
+#### Scenario: 低スコア Buy の買いシグナルスキップ
+- **WHEN** evaluation の decision="Buy" かつ score < 70 の場合
+- **THEN** "score too low" の説明付きで買いシグナルをスキップする
 
-### Requirement: Execute supports dry run
-The system SHALL default to dry-run mode, prefixing actions with "[DRY RUN]".
+#### Scenario: 強い Avoid の売りシグナル
+- **WHEN** evaluation の decision="Avoid" かつ score <= 30 の場合
+- **THEN** 既存ポジションの見直しを促す売りシグナルアクションを生成する
 
-#### Scenario: Dry run mode
-- **WHEN** user runs `kabu execute --dry-run true`
-- **THEN** system outputs actions prefixed with "[DRY RUN]" without placing actual orders
+#### Scenario: Hold アクション
+- **WHEN** evaluation の decision="Hold" または買い/売りの閾値を満たさない場合
+- **THEN** hold アクションを生成する
 
-### Requirement: Execute checks circuit breaker before processing
-The system SHALL check the circuit breaker before processing any evaluations.
+### Requirement: ドライランのサポート
+システムは SHALL デフォルトでドライランモードとし、アクションに "[DRY RUN]" プレフィックスを付ける。
 
-#### Scenario: Circuit breaker triggered
-- **WHEN** circuit breaker detects unsafe market conditions
-- **THEN** system aborts execute with `circuit_breaker_triggered: true` and lists reasons
+#### Scenario: ドライランモード
+- **WHEN** `kabu execute --dry-run true` を実行した場合
+- **THEN** 実際の注文を発行せず、"[DRY RUN]" プレフィックス付きでアクションを出力する
 
-#### Scenario: No evaluations for today
-- **WHEN** no evaluations exist for today
-- **THEN** system returns empty actions with informational log message
+### Requirement: 処理前にサーキットブレーカーを確認
+システムは SHALL evaluations の処理前にサーキットブレーカーを確認する。
+
+#### Scenario: サーキットブレーカー発動
+- **WHEN** サーキットブレーカーが危険な市場状況を検知した場合
+- **THEN** `circuit_breaker_triggered: true` と理由一覧を返して execute を中止する
+
+#### Scenario: 当日の評価がない場合
+- **WHEN** 当日の evaluations が存在しない場合
+- **THEN** 空のアクションと情報ログメッセージを返す

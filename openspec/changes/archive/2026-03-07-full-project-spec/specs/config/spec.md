@@ -1,45 +1,49 @@
-## ADDED Requirements
+## Purpose
 
-### Requirement: Config file at ~/.config/kabu/config.toml
-The system SHALL load configuration from `~/.config/kabu/config.toml` with sections: [api], [llm], [spec], [output].
+TOML 設定ファイルと環境変数によるアプリケーション設定管理、および init コマンドによる初期設定・テンプレート生成。
 
-#### Scenario: Config loaded successfully
-- **WHEN** config.toml exists with valid TOML
-- **THEN** system loads API keys, LLM backend settings, spec path, and output format
+## Requirements
 
-#### Scenario: Config file missing
-- **WHEN** config.toml does not exist
-- **THEN** system uses default values (fetch=cli-gemini, eval=cli-claude, spec=specs/template.yaml, format=json)
+### Requirement: ~/.config/kabu/config.toml による設定管理
+システムは SHALL `~/.config/kabu/config.toml` から [api], [llm], [spec], [output] セクションの設定を読み込む。
 
-### Requirement: Environment variable overrides
-The system SHALL allow overriding config values with environment variables: JQUANTS_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY.
+#### Scenario: 設定ファイルの正常読み込み
+- **WHEN** 有効な TOML 形式の config.toml が存在する場合
+- **THEN** API キー、LLM バックエンド設定、Spec パス、出力形式を読み込む
 
-#### Scenario: Env var takes precedence
-- **WHEN** both config.toml and env var define jquants_api_key
-- **THEN** system uses the env var value (env overrides config)
+#### Scenario: 設定ファイルが存在しない場合
+- **WHEN** config.toml が存在しない場合
+- **THEN** デフォルト値を使用する（fetch=cli-gemini, eval=cli-claude, spec=specs/template.yaml, format=json）
 
-#### Scenario: Empty env var is ignored
-- **WHEN** env var is set to empty string
-- **THEN** system ignores it and uses config.toml value
+### Requirement: 環境変数による設定の上書き
+システムは SHALL JQUANTS_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY の環境変数で設定値を上書きできる。
 
-### Requirement: Init command generates config and spec template
-The system SHALL generate config.toml and specs/template.yaml when `kabu init` is run.
+#### Scenario: 環境変数の優先
+- **WHEN** config.toml と環境変数の両方で jquants_api_key が定義されている場合
+- **THEN** 環境変数の値が優先される
 
-#### Scenario: First-time init
-- **WHEN** user runs `kabu init` with no existing config
-- **THEN** system creates config.toml with commented API key placeholders and specs/template.yaml
+#### Scenario: 空の環境変数は無視
+- **WHEN** 環境変数が空文字列に設定されている場合
+- **THEN** 環境変数を無視し config.toml の値を使用する
 
-#### Scenario: Config already exists
-- **WHEN** user runs `kabu init` with existing config.toml
-- **THEN** system returns an error suggesting `--force` to overwrite
+### Requirement: init コマンドで設定と Spec テンプレートを生成
+システムは SHALL `kabu init` 実行時に config.toml と specs/template.yaml を生成する。
 
-#### Scenario: Force overwrite
-- **WHEN** user runs `kabu init --force`
-- **THEN** system overwrites config.toml and regenerates specs/template.yaml
+#### Scenario: 初回の init
+- **WHEN** 既存の設定がない状態で `kabu init` を実行した場合
+- **THEN** API キーのプレースホルダー付き config.toml と specs/template.yaml を作成する
 
-### Requirement: Spec template is always overwritten
-The system SHALL always overwrite `specs/template.yaml` on init, as it is a reference template. User custom strategies use separate files.
+#### Scenario: 既存設定がある場合
+- **WHEN** 既存の config.toml がある状態で `kabu init` を実行した場合
+- **THEN** `--force` での上書きを促すエラーを返す
 
-#### Scenario: Template regenerated
-- **WHEN** user runs `kabu init` (or `--force`)
-- **THEN** system writes the latest template.yaml regardless of whether it existed
+#### Scenario: 強制上書き
+- **WHEN** `kabu init --force` を実行した場合
+- **THEN** config.toml を上書きし specs/template.yaml を再生成する
+
+### Requirement: Spec テンプレートは常に上書き
+システムは SHALL init 時に `specs/template.yaml` を常に上書きする。ユーザーのカスタム戦略は別ファイルで管理する想定。
+
+#### Scenario: テンプレートの再生成
+- **WHEN** `kabu init`（または `--force`）を実行した場合
+- **THEN** template.yaml の存在有無にかかわらず最新版を書き出す

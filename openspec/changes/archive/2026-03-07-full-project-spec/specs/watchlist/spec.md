@@ -1,34 +1,38 @@
-## ADDED Requirements
+## Purpose
 
-### Requirement: Add stock to watchlist
-The system SHALL allow adding a stock to the watchlist by ticker code.
+監視銘柄の管理（追加・削除・一覧）。パイプライン全体の対象銘柄を定義し、scan/fetch/eval の起点となる。
 
-#### Scenario: Add new stock
-- **WHEN** user runs `kabu watchlist add 7203`
-- **THEN** system adds ticker 7203 to the watchlist and logs confirmation to stderr
+## Requirements
 
-#### Scenario: Add with notes
-- **WHEN** user runs `kabu watchlist add 7203 --notes "Toyota Motor"`
-- **THEN** system adds the stock with the provided notes
+### Requirement: ウォッチリストに銘柄を追加
+システムは SHALL ticker コードでウォッチリストに銘柄を追加できる。
 
-#### Scenario: Idempotent add
-- **WHEN** user adds a stock that is already in the watchlist
-- **THEN** system does not create a duplicate entry (INSERT OR IGNORE)
+#### Scenario: 新規銘柄の追加
+- **WHEN** `kabu watchlist add 7203` を実行した場合
+- **THEN** ticker 7203 をウォッチリストに追加し、確認を stderr にログ出力する
 
-### Requirement: Remove stock from watchlist
-The system SHALL allow removing a stock from the watchlist by ticker code.
+#### Scenario: メモ付きで追加
+- **WHEN** `kabu watchlist add 7203 --notes "トヨタ自動車"` を実行した場合
+- **THEN** 指定されたメモ付きで銘柄を追加する
 
-#### Scenario: Remove existing stock
-- **WHEN** user runs `kabu watchlist remove 7203`
-- **THEN** system removes ticker 7203 from the watchlist
+#### Scenario: 冪等な追加
+- **WHEN** 既にウォッチリストにある銘柄を追加した場合
+- **THEN** 重複エントリを作成しない（INSERT OR IGNORE）
 
-### Requirement: List watchlist stocks
-The system SHALL list all stocks in the watchlist.
+### Requirement: ウォッチリストから銘柄を削除
+システムは SHALL ticker コードでウォッチリストから銘柄を削除できる。
 
-#### Scenario: List with JSON output
-- **WHEN** user runs `kabu watchlist list`
-- **THEN** system outputs watchlist items as JSON array to stdout (ticker, name, sector, notes)
+#### Scenario: 既存銘柄の削除
+- **WHEN** `kabu watchlist remove 7203` を実行した場合
+- **THEN** ticker 7203 をウォッチリストから削除する
 
-#### Scenario: List with human output
-- **WHEN** user runs `kabu watchlist list --format human`
-- **THEN** system outputs watchlist items in a formatted table
+### Requirement: ウォッチリスト銘柄の一覧表示
+システムは SHALL ウォッチリストの全銘柄を一覧表示できる。
+
+#### Scenario: JSON 出力での一覧
+- **WHEN** `kabu watchlist list` を実行した場合
+- **THEN** ウォッチリスト項目を JSON 配列で stdout に出力する（ticker, name, sector, notes）
+
+#### Scenario: human 出力での一覧
+- **WHEN** `kabu watchlist list --format human` を実行した場合
+- **THEN** ウォッチリスト項目をフォーマットされたテーブルで出力する

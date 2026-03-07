@@ -1,37 +1,41 @@
-## ADDED Requirements
+## Purpose
 
-### Requirement: Eval generates investment judgments via LLM
-The system SHALL build a comprehensive prompt with TA indicators, fetch results, and investment Spec, then send it to the eval LLM backend for investment judgment.
+LLM による投資判断生成（Buy/Hold/Avoid）。TA 指標・収集情報・投資 Spec を統合したプロンプトで評価を行う。
 
-#### Scenario: Successful evaluation
-- **WHEN** user runs `kabu eval` with stocks in the watchlist that have scan and fetch data
-- **THEN** system generates a Buy/Hold/Avoid decision with score (0-100) and rationale for each stock
+## Requirements
 
-#### Scenario: Eval for specific tickers
-- **WHEN** user runs `kabu eval 7203`
-- **THEN** system evaluates only the specified ticker
+### Requirement: LLM による投資判断の生成
+システムは SHALL TA 指標、fetch 結果、投資 Spec を統合した包括的なプロンプトを構築し、eval 用 LLM バックエンドに送信して投資判断を生成する。
 
-### Requirement: Eval response format
-The system SHALL parse the LLM response as JSON containing `decision` (Buy/Hold/Avoid), `score` (0-100), and `rationale` (summary, technical, risks).
+#### Scenario: 評価成功
+- **WHEN** scan と fetch のデータがあるウォッチリスト銘柄に対して `kabu eval` を実行した場合
+- **THEN** 各銘柄について Buy/Hold/Avoid の判断、スコア（0-100）、根拠を生成する
 
-#### Scenario: Valid eval response
-- **WHEN** LLM returns a properly formatted JSON response
-- **THEN** system extracts decision, score, and rationale fields
+#### Scenario: 特定銘柄の評価
+- **WHEN** `kabu eval 7203` を実行した場合
+- **THEN** 指定された銘柄のみを評価する
 
-#### Scenario: Markdown-wrapped eval response
-- **WHEN** LLM returns JSON wrapped in markdown code blocks
-- **THEN** system extracts JSON from the code block before parsing
+### Requirement: 評価応答のフォーマット
+システムは SHALL LLM 応答を `decision`（Buy/Hold/Avoid）、`score`（0-100）、`rationale`（summary, technical, risks）を含む JSON としてパースする。
 
-### Requirement: Eval includes investment Spec in prompt
-The system SHALL include the investment Spec (universe filters, scoring factors, execution parameters) in the eval prompt.
+#### Scenario: 有効な eval 応答
+- **WHEN** LLM が適切なフォーマットの JSON 応答を返した場合
+- **THEN** decision, score, rationale フィールドを抽出する
 
-#### Scenario: Spec included in prompt
-- **WHEN** eval command runs with a configured Spec file
-- **THEN** system loads the Spec YAML, converts it to a prompt section, and includes it in the LLM prompt
+#### Scenario: Markdown でラップされた eval 応答
+- **WHEN** LLM が markdown コードブロックでラップされた JSON を返した場合
+- **THEN** パース前にコードブロックから JSON を抽出する
 
-### Requirement: Eval results are persisted with Spec hash
-The system SHALL save evaluation results to the database with the SHA256 hash of the Spec used.
+### Requirement: eval プロンプトに投資 Spec を含める
+システムは SHALL eval プロンプトに投資 Spec（ユニバースフィルタ、スコアリング要因、執行パラメータ）を含める。
 
-#### Scenario: Evaluation saved with spec_hash
-- **WHEN** an evaluation is completed
-- **THEN** system saves ticker, name, decision, score, rationale, spec_hash, and evaluated_at to the `evaluations` table
+#### Scenario: Spec のプロンプト埋め込み
+- **WHEN** Spec ファイルが設定された状態で eval コマンドを実行した場合
+- **THEN** Spec YAML を読み込み、プロンプトセクションに変換して LLM プロンプトに含める
+
+### Requirement: 評価結果を Spec ハッシュ付きで永続化
+システムは SHALL 評価結果を、使用した Spec の SHA256 ハッシュ付きでデータベースに保存する。
+
+#### Scenario: spec_hash 付き評価保存
+- **WHEN** 評価が完了した場合
+- **THEN** ticker, name, decision, score, rationale, spec_hash, evaluated_at を `evaluations` テーブルに保存する

@@ -1,53 +1,53 @@
 ## Purpose
 
-J-Quants V2 API からの価格データ取得、テクニカル指標算出、トレーディングシグナル検出。
+J-Quants V2 API からの価格データ取得、テクニカル指標算出、トレーディングシグナル検出を一括で行う scan コマンドの仕様。
 
 ## Requirements
 
-### Requirement: Scan fetches price data from J-Quants V2 API
-The system SHALL fetch daily OHLCV price data from J-Quants V2 API for all watchlist stocks when `kabu scan` is executed.
+### Requirement: J-Quants V2 API から価格データを取得
+システムは SHALL `kabu scan` 実行時に、ウォッチリスト全銘柄の日足 OHLCV データを J-Quants V2 API から取得する。
 
-#### Scenario: Successful scan with watchlist stocks
-- **WHEN** user runs `kabu scan --days 60` with stocks in the watchlist
-- **THEN** system fetches price data for each watchlist stock from J-Quants V2 API, saves to DB, and outputs scan results as JSON to stdout
+#### Scenario: ウォッチリスト銘柄の scan 成功
+- **WHEN** ウォッチリストに銘柄がある状態で `kabu scan --days 60` を実行した場合
+- **THEN** 各銘柄の価格データを J-Quants V2 API から取得し、DB に保存し、scan 結果を JSON で stdout に出力する
 
-#### Scenario: Empty watchlist
-- **WHEN** user runs `kabu scan` with no stocks in the watchlist
-- **THEN** system outputs an empty JSON array `[]` to stdout
+#### Scenario: ウォッチリストが空
+- **WHEN** ウォッチリストが空の状態で `kabu scan` を実行した場合
+- **THEN** 空の JSON 配列 `[]` を stdout に出力する
 
-#### Scenario: Rate limiting between API calls
-- **WHEN** system fetches data for multiple stocks
-- **THEN** system SHALL wait at least 1 second between consecutive J-Quants API calls
+#### Scenario: API 呼び出しのレートリミット
+- **WHEN** 複数銘柄のデータを取得する場合
+- **THEN** J-Quants API の連続呼び出しの間に最低1秒の待機時間を設ける
 
-### Requirement: Scan computes technical indicators
-The system SHALL compute technical indicators (SMA, EMA, RSI, MACD, Bollinger Bands, ATR, Volume MA) from fetched price data.
+### Requirement: テクニカル指標を算出
+システムは SHALL 取得した価格データからテクニカル指標（SMA, EMA, RSI, MACD, ボリンジャーバンド, ATR, 出来高MA）を計算する。
 
-#### Scenario: Full indicator computation
-- **WHEN** sufficient price data exists (>= 75 data points)
-- **THEN** system computes SMA(5/25/75), EMA(12/26), RSI(14), MACD(12,26,9), Bollinger Bands(20,2), ATR(14), Volume MA(20) and includes them in scan output
+#### Scenario: 全指標の算出
+- **WHEN** 十分な価格データ（75データポイント以上）が存在する場合
+- **THEN** SMA(5/25/75), EMA(12/26), RSI(14), MACD(12,26,9), BB(20,2), ATR(14), 出来高MA(20) を算出し、scan 出力に含める
 
-#### Scenario: Insufficient data
-- **WHEN** fewer data points than required for an indicator
-- **THEN** system returns empty results for that indicator without error
+#### Scenario: データ不足
+- **WHEN** 指標の計算に必要なデータポイント数に満たない場合
+- **THEN** その指標について空の結果を返す（エラーにはしない）
 
-### Requirement: Scan detects trading signals
-The system SHALL detect trading signals from computed indicators.
+### Requirement: トレーディングシグナルを検出
+システムは SHALL 算出した指標からトレーディングシグナルを検出する。
 
-#### Scenario: Golden cross detection
-- **WHEN** SMA(5) crosses above SMA(25)
-- **THEN** system includes "golden_cross_5_25" in signals array
+#### Scenario: ゴールデンクロスの検出
+- **WHEN** SMA(5) が SMA(25) を上抜けした場合
+- **THEN** signals 配列に "golden_cross_5_25" を含める
 
-#### Scenario: Dead cross detection
-- **WHEN** SMA(5) crosses below SMA(25)
-- **THEN** system includes "dead_cross_5_25" in signals array
+#### Scenario: デッドクロスの検出
+- **WHEN** SMA(5) が SMA(25) を下抜けした場合
+- **THEN** signals 配列に "dead_cross_5_25" を含める
 
-#### Scenario: Volume spike detection
-- **WHEN** latest volume exceeds 2x the Volume MA(20)
-- **THEN** system includes "volume_spike" in signals array
+#### Scenario: 出来高急増の検出
+- **WHEN** 最新の出来高が出来高MA(20) の2倍を超えた場合
+- **THEN** signals 配列に "volume_spike" を含める
 
-### Requirement: Price data is saved to database
-The system SHALL persist fetched price data to the SQLite database with idempotent writes.
+### Requirement: 価格データのデータベース保存
+システムは SHALL 取得した価格データを冪等書き込みで SQLite データベースに永続化する。
 
-#### Scenario: Idempotent price save
-- **WHEN** same price data is saved twice for the same ticker and date
-- **THEN** system does not create duplicates (INSERT OR IGNORE)
+#### Scenario: 冪等な価格保存
+- **WHEN** 同一 ticker・同一日付の価格データが2回保存された場合
+- **THEN** 重複レコードを作成しない（INSERT OR IGNORE）

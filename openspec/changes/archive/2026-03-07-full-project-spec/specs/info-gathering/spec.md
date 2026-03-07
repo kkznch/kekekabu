@@ -1,30 +1,34 @@
-## ADDED Requirements
+## Purpose
 
-### Requirement: Fetch gathers stock information via LLM
-The system SHALL use the configured fetch LLM backend to gather latest information (news, disclosures, sentiment, competitor analysis) for watchlist stocks.
+LLM を使った銘柄情報収集（ニュース、適時開示、センチメント、競合分析）を行い、eval の入力データを構築する。
 
-#### Scenario: Successful fetch for all watchlist stocks
-- **WHEN** user runs `kabu fetch` with stocks in the watchlist
-- **THEN** system sends a structured prompt for each stock to the fetch LLM backend and saves results to `fetch_results` table
+## Requirements
 
-#### Scenario: Fetch for specific tickers
-- **WHEN** user runs `kabu fetch 7203 6758`
-- **THEN** system fetches information only for the specified tickers (if they are in the watchlist)
+### Requirement: LLM による銘柄情報の収集
+システムは SHALL 設定された fetch 用 LLM バックエンドを使用し、ウォッチリスト銘柄の最新情報（ニュース、開示、センチメント、競合分析）を収集する。
 
-### Requirement: Fetch results are structured
-The system SHALL parse LLM responses as structured JSON containing news, disclosures, sentiment, and competitor information.
+#### Scenario: ウォッチリスト全銘柄の fetch 成功
+- **WHEN** ウォッチリストに銘柄がある状態で `kabu fetch` を実行した場合
+- **THEN** 各銘柄について構造化プロンプトを fetch 用 LLM バックエンドに送信し、結果を `fetch_results` テーブルに保存する
 
-#### Scenario: Valid LLM response
-- **WHEN** LLM returns a JSON response with expected fields
-- **THEN** system parses and saves individual items to the `fetch_results` table with category and content
+#### Scenario: 特定銘柄の fetch
+- **WHEN** `kabu fetch 7203 6758` を実行した場合
+- **THEN** 指定された銘柄（ウォッチリストに含まれるもの）のみ情報を収集する
 
-#### Scenario: Markdown-wrapped JSON response
-- **WHEN** LLM returns JSON wrapped in markdown code blocks (```json ... ```)
-- **THEN** system extracts the JSON from the code block and parses it correctly
+### Requirement: 収集結果の構造化
+システムは SHALL LLM の応答をニュース、開示、センチメント、競合情報を含む構造化 JSON としてパースする。
 
-### Requirement: Fetch results are persisted
-The system SHALL save fetch results to the database for use by the eval command.
+#### Scenario: 有効な LLM 応答
+- **WHEN** LLM が期待されるフィールドを含む JSON 応答を返した場合
+- **THEN** パースして個別アイテムを category と content 付きで `fetch_results` テーブルに保存する
 
-#### Scenario: Results saved with timestamp
-- **WHEN** fetch results are saved
-- **THEN** each result includes ticker, category, content, source, and fetched_at timestamp
+#### Scenario: Markdown でラップされた JSON 応答
+- **WHEN** LLM が markdown コードブロック（```json ... ```）でラップされた JSON を返した場合
+- **THEN** コードブロックから JSON を抽出して正しくパースする
+
+### Requirement: 収集結果の永続化
+システムは SHALL fetch 結果を eval コマンドで使用するためにデータベースに保存する。
+
+#### Scenario: タイムスタンプ付き保存
+- **WHEN** fetch 結果が保存される場合
+- **THEN** 各結果に ticker, category, content, source, fetched_at タイムスタンプを含める

@@ -1,29 +1,33 @@
-## ADDED Requirements
+## Purpose
 
-### Requirement: Circuit breaker blocks execute on abnormal individual stock moves
-The system SHALL block trade execution when any watchlist stock has moved more than 30% in a single day.
+サーキットブレーカーによる安全制御。異常相場（個別銘柄の急変動・市場全体の急落）を検知し、自動売買をブロックする。
 
-#### Scenario: Individual stock circuit breaker
-- **WHEN** a watchlist stock's daily price change exceeds 30%
-- **THEN** system triggers circuit breaker, aborts execute, and reports the reason
+## Requirements
 
-### Requirement: Circuit breaker blocks execute on market-wide decline
-The system SHALL block trade execution when more than 50% of watchlist stocks have declined more than 5%.
+### Requirement: 個別銘柄の異常変動でサーキットブレーカーを発動
+システムは SHALL ウォッチリスト内の銘柄が1日で30%以上変動した場合、売買実行をブロックする。
 
-#### Scenario: Market-wide circuit breaker
-- **WHEN** more than 50% of watchlist stocks show >5% daily decline
-- **THEN** system triggers circuit breaker, aborts execute, and reports the reason
+#### Scenario: 個別銘柄のサーキットブレーカー
+- **WHEN** ウォッチリスト内の銘柄の日次変動率が30%を超えた場合
+- **THEN** サーキットブレーカーを発動し、execute を中止して理由を報告する
 
-### Requirement: Circuit breaker reports reasons
-The system SHALL report all circuit breaker trigger reasons in the execute output.
+### Requirement: 市場全体の急落でサーキットブレーカーを発動
+システムは SHALL ウォッチリスト銘柄の50%以上が5%以上下落した場合、売買実行をブロックする。
 
-#### Scenario: Multiple triggers
-- **WHEN** both individual and market-wide thresholds are exceeded
-- **THEN** system includes all trigger reasons in `circuit_breaker_reasons` array
+#### Scenario: 市場全体のサーキットブレーカー
+- **WHEN** ウォッチリスト銘柄の50%超が日次5%以上の下落を示した場合
+- **THEN** サーキットブレーカーを発動し、execute を中止して理由を報告する
 
-### Requirement: Execute defaults to dry run
-The system SHALL default `--dry-run` to `true` to prevent accidental order placement.
+### Requirement: サーキットブレーカーの理由報告
+システムは SHALL サーキットブレーカー発動のすべての理由を execute 出力に含める。
 
-#### Scenario: Default dry run
-- **WHEN** user runs `kabu execute` without explicit `--dry-run` flag
-- **THEN** system operates in dry-run mode (no actual orders placed)
+#### Scenario: 複数のトリガー
+- **WHEN** 個別銘柄・市場全体の両方の閾値を超えた場合
+- **THEN** すべてのトリガー理由を `circuit_breaker_reasons` 配列に含める
+
+### Requirement: execute のデフォルトはドライラン
+システムは SHALL `--dry-run` のデフォルトを `true` とし、誤発注を防止する。
+
+#### Scenario: デフォルトのドライラン
+- **WHEN** `--dry-run` フラグを明示せずに `kabu execute` を実行した場合
+- **THEN** ドライランモードで動作する（実際の注文は発行されない）

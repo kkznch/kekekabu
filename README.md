@@ -30,22 +30,58 @@ cargo run -- init
 # → ~/.config/kktd/config.toml と specs/template.yaml が生成される
 ```
 
-`~/.config/kktd/config.toml` を編集して API キーを設定してください。
+`~/.config/kktd/config.toml` を編集して設定してください。
+
+### `[api]` — API キー
+
+| キー | 説明 | 必須 |
+|------|------|------|
+| `jquants_api_key` | [J-Quants API](https://jpx.gitbook.io/j-quants-ja) のキー。`scan` で価格データ取得に使用 | `scan` 使用時 |
+| `anthropic_api_key` | Anthropic API キー。`llm.eval = "api-anthropic"` の場合に使用 | `api-anthropic` 使用時 |
+
+環境変数 `JQUANTS_API_KEY`, `ANTHROPIC_API_KEY` でも設定可能です（config より優先）。
+
+### `[llm]` — LLM バックエンド
+
+| キー | デフォルト | 説明 |
+|------|-----------|------|
+| `fetch` | `cli-gemini` | `fetch` コマンドで使う LLM。`cli-gemini` / `cli-claude` / `api-anthropic` |
+| `eval` | `cli-claude` | `eval` コマンドで使う LLM。同上 |
+| `fetch_model` | (なし) | `fetch` で使うモデル名の上書き |
+| `eval_model` | (なし) | `eval` で使うモデル名の上書き |
+
+`cli-gemini` / `cli-claude` はそれぞれ `gemini` / `claude` CLI がインストールされている必要があります。
+
+### `[spec]` — 投資戦略
+
+| キー | デフォルト | 説明 |
+|------|-----------|------|
+| `path` | `specs/template.yaml` | 投資戦略 YAML ファイルのパス（config ディレクトリからの相対パスまたは絶対パス） |
+
+`kktd init` で生成される `template.yaml` をコピーして独自の戦略ファイルを作成し、ここで指定します。
+
+### `[output]` — 出力設定
+
+| キー | デフォルト | 説明 |
+|------|-----------|------|
+| `default_format` | `json` | デフォルトの出力形式。`json` または `human` |
+
+### 設定例
 
 ```toml
 [api]
 jquants_api_key = "YOUR_JQUANTS_API_KEY"
-anthropic_api_key = "YOUR_ANTHROPIC_API_KEY"
 
 [llm]
-fetch = "cli-gemini"    # fetch コマンドの LLM バックエンド
-eval = "cli-claude"     # eval コマンドの LLM バックエンド
+fetch = "cli-gemini"
+eval = "cli-claude"
 
 [spec]
-path = "specs/template.yaml"   # 投資戦略ファイルのパス
-```
+path = "specs/my-strategy.yaml"
 
-環境変数でも設定可能です: `JQUANTS_API_KEY`, `ANTHROPIC_API_KEY`
+[output]
+default_format = "json"
+```
 
 ## 使い方
 

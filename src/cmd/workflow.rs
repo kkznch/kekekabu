@@ -7,7 +7,7 @@ use crate::cmd::discover;
 use crate::cmd::eval::{self, PositionInfo};
 use crate::cmd::fetch;
 use crate::config::AppConfig;
-use crate::db;
+use crate::db::{self, WatchlistItem};
 use crate::indicators;
 use crate::jquants::StockApi;
 use crate::llm;
@@ -52,247 +52,218 @@ pub struct WorkflowError {
     pub error: String,
 }
 
+impl WorkflowReport {
+    fn new() -> Self {
+        Self {
+            discover: None,
+            stocks: Vec::new(),
+            errors: Vec::new(),
+        }
+    }
+
+    fn init_stocks(&mut self, watchlist: &[WatchlistItem]) {
+        self.stocks = watchlist
+            .iter()
+            .map(|item| StockWorkflowStatus {
+                ticker: item.ticker.clone(),
+                name: item.name.clone(),
+                scan: StepStatus::Skipped,
+                fetch: StepStatus::Skipped,
+                eval: StepStatus::Skipped,
+            })
+            .collect();
+    }
+
+    fn apply_result(&mut self, index: usize, step: &str, ticker: &str, result: Result<()>) {
+        let status = match result {
+            Ok(()) => StepStatus::Success,
+            Err(e) => {
+                let error = e.to_string();
+                warn!(step, ticker, error = %error, "Step failed");
+                self.errors.push(WorkflowError {
+                    step: step.to_string(),
+                    ticker: Some(ticker.to_string()),
+                    error: error.clone(),
+                });
+                StepStatus::Failed(error)
+            }
+        };
+        match step {
+            "scan" => self.stocks[index].scan = status,
+            "fetch" => self.stocks[index].fetch = status,
+            "eval" => self.stocks[index].eval = status,
+            _ => {}
+        }
+    }
+
+    fn log_summary(&self) {
+        let success_count = self
+            .stocks
+            .iter()
+            .filter(|s| matches!(s.eval, StepStatus::Success))
+            .count();
+        info!(
+            total = self.stocks.len(),
+            success = success_count,
+            errors = self.errors.len(),
+            "Workflow complete"
+        );
+    }
+}
+
+// ─── Pipeline ───────────────────────────────────────────────────────
+
 pub async fn run(
     conn: &Connection,
     config: &AppConfig,
     stock_api: &dyn StockApi,
     skip: &[String],
 ) -> Result<WorkflowReport> {
-    let mut report = WorkflowReport {
-        discover: None,
-        stocks: Vec::new(),
-        errors: Vec::new(),
-    };
+    let mut report = WorkflowReport::new();
 
-    let skip_discover = skip.iter().any(|s| s == "discover");
-    let skip_scan = skip.iter().any(|s| s == "scan");
-    let skip_fetch = skip.iter().any(|s| s == "fetch");
+    step_discover(&mut report, conn, config, skip).await;
 
-    // === Discover ===
-    if !skip_discover {
-        info!("Workflow: running discover step");
-        match discover::run(conn, config).await {
-            Ok(result) => {
-                info!(
-                    added = result.added.len(),
-                    removed = result.removed.len(),
-                    kept = result.kept.len(),
-                    "Discover step complete"
-                );
-                report.discover = Some(DiscoverStepResult {
-                    added: result.added,
-                    removed: result.removed,
-                    kept: result.kept,
-                });
-            }
-            Err(e) => {
-                warn!(error = %e, "Discover step failed");
-                report.errors.push(WorkflowError {
-                    step: "discover".to_string(),
-                    ticker: None,
-                    error: e.to_string(),
-                });
-            }
-        }
-    } else {
-        info!("Workflow: skipping discover step");
-    }
-
-    // Get watchlist for remaining steps
     let watchlist = db::watchlist_list(conn).await?;
     if watchlist.is_empty() {
         info!("Watchlist is empty, nothing to process");
         return Ok(report);
     }
+    report.init_stocks(&watchlist);
 
-    // Build initial stock statuses
-    for item in &watchlist {
-        report.stocks.push(StockWorkflowStatus {
-            ticker: item.ticker.clone(),
-            name: item.name.clone(),
-            scan: if skip_scan {
-                StepStatus::Skipped
-            } else {
-                StepStatus::Skipped
-            },
-            fetch: StepStatus::Skipped,
-            eval: StepStatus::Skipped,
-        });
+    step_scan(&mut report, conn, stock_api, &watchlist, skip).await?;
+    step_fetch(&mut report, conn, config, &watchlist, skip).await?;
+    step_eval(&mut report, conn, config, &watchlist).await?;
+
+    report.log_summary();
+    Ok(report)
+}
+
+// ─── Steps ──────────────────────────────────────────────────────────
+
+async fn step_discover(
+    report: &mut WorkflowReport,
+    conn: &Connection,
+    config: &AppConfig,
+    skip: &[String],
+) {
+    if skip.iter().any(|s| s == "discover") {
+        info!("Workflow: skipping discover step");
+        return;
     }
 
-    // === Scan ===
-    if !skip_scan {
-        info!(count = watchlist.len(), "Workflow: running scan step");
-
-        // Refresh master if needed
-        if !db::has_any_stocks(conn).await? {
-            info!("Stock master empty, refreshing from J-Quants API");
-            match stock_api.get_all_stock_info().await {
-                Ok(stocks) => {
-                    let count = db::save_stocks_bulk(conn, &stocks).await?;
-                    info!(count, "Stock master refreshed");
-                }
-                Err(e) => {
-                    warn!(error = %e, "Failed to refresh stock master");
-                    report.errors.push(WorkflowError {
-                        step: "scan".to_string(),
-                        ticker: None,
-                        error: format!("Master refresh failed: {e}"),
-                    });
-                }
-            }
+    info!("Workflow: running discover step");
+    match discover::run(conn, config).await {
+        Ok(result) => {
+            info!(
+                added = result.added.len(),
+                removed = result.removed.len(),
+                kept = result.kept.len(),
+                "Discover step complete"
+            );
+            report.discover = Some(DiscoverStepResult {
+                added: result.added,
+                removed: result.removed,
+                kept: result.kept,
+            });
         }
-
-        let to_date = chrono::Local::now().format("%Y-%m-%d").to_string();
-        let from_date = (chrono::Local::now() - chrono::Duration::days(60))
-            .format("%Y-%m-%d")
-            .to_string();
-
-        for (i, item) in watchlist.iter().enumerate() {
-            let stock_id = match db::get_stock_id(conn, &item.ticker).await? {
-                Some(id) => id,
-                None => {
-                    let msg = "Stock not found in master data".to_string();
-                    warn!(ticker = %item.ticker, "{}", msg);
-                    report.stocks[i].scan = StepStatus::Failed(msg.clone());
-                    report.errors.push(WorkflowError {
-                        step: "scan".to_string(),
-                        ticker: Some(item.ticker.clone()),
-                        error: msg,
-                    });
-                    continue;
-                }
-            };
-
-            if i > 0 {
-                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-            }
-
-            match stock_api
-                .get_daily_quotes(&item.ticker, &from_date, &to_date)
-                .await
-            {
-                Ok(quotes) => {
-                    if let Err(e) = db::save_prices(conn, stock_id, &quotes).await {
-                        let msg = format!("Failed to save prices: {e}");
-                        warn!(ticker = %item.ticker, "{}", msg);
-                        report.stocks[i].scan = StepStatus::Failed(msg.clone());
-                        report.errors.push(WorkflowError {
-                            step: "scan".to_string(),
-                            ticker: Some(item.ticker.clone()),
-                            error: msg,
-                        });
-                    } else {
-                        info!(ticker = %item.ticker, count = quotes.len(), "Scan complete");
-                        report.stocks[i].scan = StepStatus::Success;
-                    }
-                }
-                Err(e) => {
-                    let msg = format!("API error: {e}");
-                    warn!(ticker = %item.ticker, "{}", msg);
-                    report.stocks[i].scan = StepStatus::Failed(msg.clone());
-                    report.errors.push(WorkflowError {
-                        step: "scan".to_string(),
-                        ticker: Some(item.ticker.clone()),
-                        error: msg,
-                    });
-                }
-            }
+        Err(e) => {
+            warn!(error = %e, "Discover step failed");
+            report.errors.push(WorkflowError {
+                step: "discover".to_string(),
+                ticker: None,
+                error: e.to_string(),
+            });
         }
-    } else {
+    }
+}
+
+async fn step_scan(
+    report: &mut WorkflowReport,
+    conn: &Connection,
+    stock_api: &dyn StockApi,
+    watchlist: &[WatchlistItem],
+    skip: &[String],
+) -> Result<()> {
+    if skip.iter().any(|s| s == "scan") {
         info!("Workflow: skipping scan step");
-        // Mark all as Success to allow fetch/eval to proceed
         for status in &mut report.stocks {
             status.scan = StepStatus::Success;
         }
+        return Ok(());
     }
 
-    // === Fetch ===
-    if !skip_fetch {
-        let fetch_backend = llm::create_backend(
-            &config.llm.fetch,
-            &config.api,
-            config.llm.fetch_model.as_deref(),
-        )?;
+    info!(count = watchlist.len(), "Workflow: running scan step");
 
-        info!("Workflow: running fetch step");
-
-        for (i, item) in watchlist.iter().enumerate() {
-            if !matches!(report.stocks[i].scan, StepStatus::Success) {
-                report.stocks[i].fetch = StepStatus::Skipped;
-                continue;
-            }
-
-            let stock_id = match db::get_stock_id(conn, &item.ticker).await? {
-                Some(id) => id,
-                None => {
-                    report.stocks[i].fetch = StepStatus::Skipped;
-                    continue;
-                }
-            };
-
-            let prompt = fetch::build_fetch_prompt(&item.ticker, &item.name);
-
-            match fetch_backend.send_message(&prompt, 8192).await {
-                Ok(response_text) => match fetch::parse_fetch_response(&response_text) {
-                    Ok(items) => {
-                        let mut saved = 0;
-                        for fi in &items {
-                            if let Err(e) = db::save_fetch_result(
-                                conn,
-                                stock_id,
-                                &config.llm.fetch,
-                                &fi.category,
-                                &fi.title,
-                                fi.url.as_deref(),
-                                fi.body.as_deref(),
-                                fi.published_at.as_deref(),
-                            )
-                            .await
-                            {
-                                warn!(ticker = %item.ticker, error = %e, "Failed to save fetch result");
-                            } else {
-                                saved += 1;
-                            }
-                        }
-                        info!(ticker = %item.ticker, count = saved, "Fetch complete");
-                        report.stocks[i].fetch = StepStatus::Success;
-                    }
-                    Err(e) => {
-                        let msg = format!("Parse error: {e}");
-                        warn!(ticker = %item.ticker, "{}", msg);
-                        report.stocks[i].fetch = StepStatus::Failed(msg.clone());
-                        report.errors.push(WorkflowError {
-                            step: "fetch".to_string(),
-                            ticker: Some(item.ticker.clone()),
-                            error: msg,
-                        });
-                    }
-                },
-                Err(e) => {
-                    let msg = format!("LLM error: {e}");
-                    warn!(ticker = %item.ticker, "{}", msg);
-                    report.stocks[i].fetch = StepStatus::Failed(msg.clone());
-                    report.errors.push(WorkflowError {
-                        step: "fetch".to_string(),
-                        ticker: Some(item.ticker.clone()),
-                        error: msg,
-                    });
-                }
-            }
+    if !db::has_any_stocks(conn).await? {
+        info!("Stock master empty, refreshing from J-Quants API");
+        if let Err(e) = refresh_stock_master(conn, stock_api).await {
+            warn!(error = %e, "Failed to refresh stock master");
+            report.errors.push(WorkflowError {
+                step: "scan".to_string(),
+                ticker: None,
+                error: format!("Master refresh failed: {e}"),
+            });
         }
-    } else {
+    }
+
+    let to_date = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let from_date = (chrono::Local::now() - chrono::Duration::days(60))
+        .format("%Y-%m-%d")
+        .to_string();
+
+    for (i, item) in watchlist.iter().enumerate() {
+        if i > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        }
+        let result = scan_single_stock(conn, stock_api, &item.ticker, &from_date, &to_date).await;
+        report.apply_result(i, "scan", &item.ticker, result);
+    }
+    Ok(())
+}
+
+async fn step_fetch(
+    report: &mut WorkflowReport,
+    conn: &Connection,
+    config: &AppConfig,
+    watchlist: &[WatchlistItem],
+    skip: &[String],
+) -> Result<()> {
+    if skip.iter().any(|s| s == "fetch") {
         info!("Workflow: skipping fetch step");
-        // Mark scan-succeeded stocks as Success for fetch to allow eval
         for status in &mut report.stocks {
             if matches!(status.scan, StepStatus::Success) {
                 status.fetch = StepStatus::Success;
             }
         }
+        return Ok(());
     }
 
-    // === Eval ===
-    let eval_backend = llm::create_backend(
+    let backend = llm::create_backend(
+        &config.llm.fetch,
+        &config.api,
+        config.llm.fetch_model.as_deref(),
+    )?;
+
+    info!("Workflow: running fetch step");
+
+    for (i, item) in watchlist.iter().enumerate() {
+        if !matches!(report.stocks[i].scan, StepStatus::Success) {
+            continue;
+        }
+        let result =
+            fetch_single_stock(conn, &backend, &item.ticker, &item.name, &config.llm.fetch).await;
+        report.apply_result(i, "fetch", &item.ticker, result);
+    }
+    Ok(())
+}
+
+async fn step_eval(
+    report: &mut WorkflowReport,
+    conn: &Connection,
+    config: &AppConfig,
+    watchlist: &[WatchlistItem],
+) -> Result<()> {
+    let backend = llm::create_backend(
         &config.llm.eval,
         &config.api,
         config.llm.eval_model.as_deref(),
@@ -306,39 +277,28 @@ pub async fn run(
     let held_tickers: std::collections::HashSet<String> =
         positions.iter().map(|p| p.ticker.clone()).collect();
 
-    let budget_context = if let Some(initial_cash) = budget_initial_cash {
-        let cash_summary = db::trade_cash_summary(conn).await?;
-        Some(spec::build_budget_context(
-            initial_cash,
-            cash_summary.total_invested,
-            cash_summary.total_recovered,
-            positions.len(),
-        ))
-    } else {
-        None
+    let budget_context = match budget_initial_cash {
+        Some(initial_cash) => {
+            let cash_summary = db::trade_cash_summary(conn).await?;
+            Some(spec::build_budget_context(
+                initial_cash,
+                cash_summary.total_invested,
+                cash_summary.total_recovered,
+                positions.len(),
+            ))
+        }
+        None => None,
     };
 
     info!("Workflow: running eval step");
 
     for (i, item) in watchlist.iter().enumerate() {
         if !matches!(report.stocks[i].fetch, StepStatus::Success) {
-            report.stocks[i].eval = StepStatus::Skipped;
             continue;
         }
-
-        let stock_id = match db::get_stock_id(conn, &item.ticker).await? {
-            Some(id) => id,
-            None => {
-                report.stocks[i].eval = StepStatus::Skipped;
-                continue;
-            }
-        };
-
-        // Attempt eval for this stock, isolating errors
-        match eval_single_stock(
+        let result = eval_single_stock_full(
             conn,
-            &eval_backend,
-            stock_id,
+            &backend,
             &item.ticker,
             &item.name,
             &held_tickers,
@@ -348,47 +308,75 @@ pub async fn run(
             budget_context.as_deref(),
             &config.llm.eval,
         )
+        .await;
+        report.apply_result(i, "eval", &item.ticker, result);
+    }
+    Ok(())
+}
+
+// ─── Per-stock operations ───────────────────────────────────────────
+
+async fn refresh_stock_master(conn: &Connection, stock_api: &dyn StockApi) -> Result<()> {
+    let stocks = stock_api.get_all_stock_info().await?;
+    db::save_stocks_bulk(conn, &stocks).await?;
+    Ok(())
+}
+
+async fn scan_single_stock(
+    conn: &Connection,
+    stock_api: &dyn StockApi,
+    ticker: &str,
+    from_date: &str,
+    to_date: &str,
+) -> Result<()> {
+    let stock_id = db::get_stock_id(conn, ticker)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Stock not found in master data"))?;
+    let quotes = stock_api
+        .get_daily_quotes(ticker, from_date, to_date)
+        .await?;
+    db::save_prices(conn, stock_id, &quotes).await?;
+    info!(ticker = %ticker, count = quotes.len(), "Scan complete");
+    Ok(())
+}
+
+async fn fetch_single_stock(
+    conn: &Connection,
+    backend: &Box<dyn llm::LlmBackend>,
+    ticker: &str,
+    name: &str,
+    llm_backend_name: &str,
+) -> Result<()> {
+    let stock_id = db::get_stock_id(conn, ticker)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Stock not found"))?;
+    let prompt = fetch::build_fetch_prompt(ticker, name);
+    let response_text = backend.send_message(&prompt, 8192).await?;
+    let items = fetch::parse_fetch_response(&response_text)?;
+    for fi in &items {
+        if let Err(e) = db::save_fetch_result(
+            conn,
+            stock_id,
+            llm_backend_name,
+            &fi.category,
+            &fi.title,
+            fi.url.as_deref(),
+            fi.body.as_deref(),
+            fi.published_at.as_deref(),
+        )
         .await
         {
-            Ok(()) => {
-                info!(ticker = %item.ticker, "Eval complete");
-                report.stocks[i].eval = StepStatus::Success;
-            }
-            Err(e) => {
-                let msg = e.to_string();
-                warn!(ticker = %item.ticker, error = %msg, "Eval failed");
-                report.stocks[i].eval = StepStatus::Failed(msg.clone());
-                report.errors.push(WorkflowError {
-                    step: "eval".to_string(),
-                    ticker: Some(item.ticker.clone()),
-                    error: msg,
-                });
-            }
+            warn!(ticker = %ticker, error = %e, "Failed to save fetch result");
         }
     }
-
-    // Summary
-    let success_count = report
-        .stocks
-        .iter()
-        .filter(|s| matches!(s.eval, StepStatus::Success))
-        .count();
-    let failed_count = report.errors.len();
-    info!(
-        total = report.stocks.len(),
-        success = success_count,
-        errors = failed_count,
-        "Workflow complete"
-    );
-
-    Ok(report)
+    info!(ticker = %ticker, count = items.len(), "Fetch complete");
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn eval_single_stock(
+async fn eval_single_stock_full(
     conn: &Connection,
     backend: &Box<dyn llm::LlmBackend>,
-    stock_id: i64,
     ticker: &str,
     name: &str,
     held_tickers: &std::collections::HashSet<String>,
@@ -398,13 +386,16 @@ async fn eval_single_stock(
     budget_context: Option<&str>,
     llm_backend_name: &str,
 ) -> Result<()> {
+    let stock_id = db::get_stock_id(conn, ticker)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Stock not found"))?;
+
     let price_data = db::fetch_price_data(conn, stock_id).await?;
-    if price_data.closes.len() < 14 {
-        anyhow::bail!(
-            "Insufficient data for evaluation (need >= 14 days, got {})",
-            price_data.closes.len()
-        );
-    }
+    anyhow::ensure!(
+        price_data.closes.len() >= 14,
+        "Insufficient data for evaluation (need >= 14 days, got {})",
+        price_data.closes.len()
+    );
 
     let ta = indicators::calculate_indicators(
         &price_data.closes,
@@ -424,31 +415,31 @@ async fn eval_single_stock(
     let fetch_section = if fetch_results.is_empty() {
         "No recent information available.".to_string()
     } else {
-        let mut s = String::new();
-        for fr in fetch_results.iter().take(10) {
-            s.push_str(&format!("- [{}] {}", fr.category, fr.title));
-            if let Some(ref body) = fr.body {
-                s.push_str(&format!(": {}", body));
-            }
-            s.push('\n');
-        }
-        s
+        fetch_results
+            .iter()
+            .take(10)
+            .map(|fr| match &fr.body {
+                Some(body) => format!("- [{}] {}: {}", fr.category, fr.title, body),
+                None => format!("- [{}] {}", fr.category, fr.title),
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     };
 
-    let recent_evals = db::get_recent_evaluations_by_stock(conn, stock_id, 3).await?;
-    let history_section = if recent_evals.is_empty() {
-        None
-    } else {
-        let mut s = String::from("## Past Evaluations (most recent first)\n");
-        for e in &recent_evals {
+    let history_section = db::get_recent_evaluations_by_stock(conn, stock_id, 3)
+        .await?
+        .iter()
+        .fold(None, |acc, e| {
             let date = e.evaluated_at.split('T').next().unwrap_or(&e.evaluated_at);
-            s.push_str(&format!(
+            let line = format!(
                 "- {}: {} (score: {}) — {}\n",
                 date, e.decision, e.score, e.rationale
-            ));
-        }
-        Some(s)
-    };
+            );
+            Some(match acc {
+                None => format!("## Past Evaluations (most recent first)\n{line}"),
+                Some(s) => format!("{s}{line}"),
+            })
+        });
 
     let status = if held_tickers.contains(ticker) {
         "ExistingHolding"
@@ -503,6 +494,7 @@ async fn eval_single_stock(
     )
     .await?;
 
+    info!(ticker = %ticker, "Eval complete");
     Ok(())
 }
 

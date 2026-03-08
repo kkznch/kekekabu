@@ -56,10 +56,10 @@ struct EvalTarget {
     position_info: Option<PositionInfo>,
 }
 
-struct PositionInfo {
-    quantity: String,
-    avg_cost: String,
-    unrealized_pnl_pct: String,
+pub(crate) struct PositionInfo {
+    pub(crate) quantity: String,
+    pub(crate) avg_cost: String,
+    pub(crate) unrealized_pnl_pct: String,
 }
 
 pub async fn run(
@@ -301,7 +301,7 @@ async fn build_eval_targets(conn: &Connection, tickers: &[String]) -> Result<Vec
 }
 
 #[allow(clippy::too_many_arguments)]
-fn build_eval_prompt(
+pub(crate) fn build_eval_prompt(
     ticker: &str,
     name: &str,
     status: &str,
@@ -395,7 +395,7 @@ Respond ONLY with a JSON object in this exact format (no markdown, no code block
     )
 }
 
-fn eval_response_schema() -> serde_json::Value {
+pub(crate) fn eval_response_schema() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
         "required": ["ticker", "status", "decision", "score", "analysis"],
@@ -424,7 +424,7 @@ fn eval_response_schema() -> serde_json::Value {
     })
 }
 
-fn parse_eval_response(text: &str) -> Result<EvalResponse> {
+pub(crate) fn parse_eval_response(text: &str) -> Result<EvalResponse> {
     let json_str = extract_json(text);
     serde_json::from_str(json_str).map_err(|e| {
         anyhow::anyhow!(
@@ -435,7 +435,7 @@ fn parse_eval_response(text: &str) -> Result<EvalResponse> {
     })
 }
 
-fn extract_json(text: &str) -> &str {
+pub(crate) fn extract_json(text: &str) -> &str {
     let text = text.trim();
     if let Some(start) = text.find('{')
         && let Some(end) = text.rfind('}')

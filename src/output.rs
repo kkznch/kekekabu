@@ -215,3 +215,52 @@ impl HumanDisplay for crate::portfolio::TradeRecord {
         );
     }
 }
+
+impl HumanDisplay for crate::cmd::workflow::WorkflowReport {
+    fn print_human(&self) {
+        if let Some(ref d) = self.discover {
+            println!("=== Discover ===");
+            if !d.added.is_empty() {
+                println!("  Added: {}", d.added.join(", "));
+            }
+            if !d.removed.is_empty() {
+                println!("  Removed: {}", d.removed.join(", "));
+            }
+            if !d.kept.is_empty() {
+                println!("  Kept: {}", d.kept.join(", "));
+            }
+        }
+
+        println!("\n=== Per-Stock Results ===");
+        println!(
+            "{:<10} {:<20} {:<10} {:<10} {:<10}",
+            "Ticker", "Name", "Scan", "Fetch", "Eval"
+        );
+        for s in &self.stocks {
+            let scan = step_label(&s.scan);
+            let fetch = step_label(&s.fetch);
+            let eval = step_label(&s.eval);
+            println!(
+                "{:<10} {:<20} {:<10} {:<10} {:<10}",
+                s.ticker, s.name, scan, fetch, eval
+            );
+        }
+
+        if !self.errors.is_empty() {
+            println!("\n=== Errors ({}) ===", self.errors.len());
+            for e in &self.errors {
+                let ticker = e.ticker.as_deref().unwrap_or("-");
+                println!("  [{}] {}: {}", e.step, ticker, e.error);
+            }
+        }
+    }
+}
+
+fn step_label(status: &crate::cmd::workflow::StepStatus) -> &str {
+    use crate::cmd::workflow::StepStatus;
+    match status {
+        StepStatus::Success => "OK",
+        StepStatus::Skipped => "Skip",
+        StepStatus::Failed(_) => "FAIL",
+    }
+}

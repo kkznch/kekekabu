@@ -73,6 +73,19 @@ enum Command {
     /// Manage launchd service (macOS)
     #[command(subcommand)]
     Service(ServiceCommand),
+    /// Run the full pipeline as a single process with per-stock error isolation
+    #[command(subcommand)]
+    Workflow(WorkflowCommand),
+}
+
+#[derive(Subcommand)]
+enum WorkflowCommand {
+    /// Run discover → scan → fetch → eval pipeline
+    Run {
+        /// Steps to skip (discover, scan, fetch)
+        #[arg(long)]
+        skip: Vec<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -191,8 +204,30 @@ async fn main() -> Result<()> {
 
     let config = config::AppConfig::load()?;
 
+    // workflow subcommand — single-process pipeline
+    if let Command::Workflow(sub) = cli.command {
+        match sub {
+            WorkflowCommand::Run { skip } => {
+                let api_key = config::AppConfig::require_key(
+                    &config.api.jquants_api_key,
+                    "JQUANTS_API_KEY",
+                )?;
+                let stock_api = jquants::JQuantsClient::new(api_key);
+                let report =
+                    cmd::workflow::run(&conn, &config, &stock_api, &skip).await?;
+                output::print_output(&report, cli.format);
+            }
+        }
+        return Ok(());
+    }
+
     match cli.command {
-        Command::Config(_) | Command::Show(_) | Command::Service(_) => unreachable!(),
+        Command::Config(_)
+        | Command::Show(_)
+        | Command::Service(_)
+        | Command::Workflow(_) => {
+            unreachable!()
+        }
         Command::Discover => {
             let result = cmd::discover::run(&conn, &config).await?;
             output::print_output(&result, cli.format);

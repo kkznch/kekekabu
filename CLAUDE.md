@@ -64,6 +64,11 @@ kabu eval                            # LLM evaluation (Hunting + Farming)
 kabu execute --dry-run               # Execute trades (dry run)
 kabu report -o report.md             # Generate Markdown report
 
+# Workflow (single-process pipeline with per-stock error isolation)
+kabu workflow run                    # Run discover → scan → fetch → eval
+kabu workflow run --skip discover    # Skip discover step
+kabu workflow run --skip discover --skip scan  # Start from fetch
+
 # Config
 kabu config init                     # Initialize config + spec template
 kabu config init --force             # Overwrite existing config
@@ -91,10 +96,11 @@ kabu service status                  # Show service status
 ## Automation (cron/launchd)
 
 ```sh
-# Weekly: refresh stock master + full pipeline
-kabu discover && kabu scan --refresh-master --days 60 && kabu fetch && kabu eval
+# Recommended: single-process pipeline with per-stock error isolation
+kabu workflow run                    # Full pipeline (discover → scan → fetch → eval)
+kabu workflow run --skip discover    # Skip discover (daily use)
 
-# Daily: scan without master refresh + eval
+# Legacy: shell chaining (no error isolation)
 kabu discover && kabu scan --days 60 && kabu fetch && kabu eval
 
 # Market open: execute

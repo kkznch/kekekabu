@@ -14,9 +14,9 @@ const PLIST_TEMPLATE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
     <string>{label}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/sh</string>
-        <string>-c</string>
-        <string>{bin} discover &amp;&amp; {bin} scan --days 60 &amp;&amp; {bin} fetch &amp;&amp; {bin} eval</string>
+        <string>{bin}</string>
+        <string>workflow</string>
+        <string>run</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict>
@@ -343,11 +343,13 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_plist_contains_pipeline_commands() {
+    fn test_generate_plist_contains_workflow_command() {
         let plist = generate_plist("/path/to/kabu", "/tmp/logs");
-        assert!(plist.contains(
-            "/path/to/kabu discover &amp;&amp; /path/to/kabu scan --days 60 &amp;&amp; /path/to/kabu fetch &amp;&amp; /path/to/kabu eval"
-        ));
+        assert!(plist.contains("<string>/path/to/kabu</string>"));
+        assert!(plist.contains("<string>workflow</string>"));
+        assert!(plist.contains("<string>run</string>"));
+        // No longer uses /bin/sh -c
+        assert!(!plist.contains("/bin/sh"));
     }
 
     #[test]

@@ -13,15 +13,15 @@ struct GeminiFetchResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct GeminiFetchItem {
-    category: String,
-    title: String,
+pub(crate) struct GeminiFetchItem {
+    pub(crate) category: String,
+    pub(crate) title: String,
     #[serde(default)]
-    url: Option<String>,
+    pub(crate) url: Option<String>,
     #[serde(default)]
-    body: Option<String>,
+    pub(crate) body: Option<String>,
     #[serde(default)]
-    published_at: Option<String>,
+    pub(crate) published_at: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -102,7 +102,7 @@ pub async fn run(
     Ok(results)
 }
 
-fn build_fetch_prompt(ticker: &str, name: &str) -> String {
+pub(crate) fn build_fetch_prompt(ticker: &str, name: &str) -> String {
     format!(
         r#"You are a financial research analyst. Gather the latest information about the following Japanese stock.
 
@@ -139,7 +139,7 @@ Respond ONLY with a JSON object in this exact format (no markdown, no code block
     )
 }
 
-fn parse_fetch_response(text: &str) -> Result<Vec<GeminiFetchItem>> {
+pub(crate) fn parse_fetch_response(text: &str) -> Result<Vec<GeminiFetchItem>> {
     let json_str = extract_json(text);
     let response: GeminiFetchResponse = serde_json::from_str(json_str)
         .map_err(|e| anyhow::anyhow!("Failed to parse fetch response: {}\nRaw: {}", e, text))?;

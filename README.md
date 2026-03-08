@@ -112,6 +112,7 @@ flowchart LR
 | `show` | R | - | - |
 | `config init` | - | - | - |
 | `config validate` | - | - | - |
+| `service` | - | - | - |
 
 > R = 読み取り、W = 書き込み、R/W = 両方
 
@@ -252,7 +253,26 @@ kabu show trades                    # 取引履歴
 出力はデフォルトで JSON（stdout）。`--format human` で人間向け表示に切り替え可能。
 ログは stderr に出力されるため、パイプラインでの利用に適しています。
 
-## 自動化（cron / launchd）
+## 自動化（launchd）
+
+`kabu service` で macOS の launchd サービスを管理できます。
+
+```sh
+# インストール（plist 生成 + ~/Library/LaunchAgents/ に配置）
+kabu service install
+
+# サービスの開始 / 停止 / 状態確認
+kabu service start
+kabu service stop
+kabu service status
+
+# アンインストール
+kabu service uninstall
+```
+
+デフォルトでは毎日 08:00 に `discover → scan → fetch → eval` パイプラインが実行されます。
+
+### 手動実行
 
 ```sh
 # 週次: 銘柄マスター更新 + フルパイプライン

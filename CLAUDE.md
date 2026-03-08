@@ -79,6 +79,13 @@ kabu show stocks                     # Registered stocks
 kabu show tables                     # Table row counts
 kabu show summary                    # Portfolio summary
 kabu show trades                     # Trade history
+
+# Service (macOS launchd)
+kabu service install                 # Generate + install launchd plist
+kabu service uninstall               # Remove plist + stop service
+kabu service start                   # Load service via launchctl
+kabu service stop                    # Unload service via launchctl
+kabu service status                  # Show service status
 ```
 
 ## Automation (cron/launchd)

@@ -5,4 +5,5 @@ pub mod execute;
 pub mod fetch;
 pub mod report;
 pub mod scan;
+pub mod service;
 pub mod show;

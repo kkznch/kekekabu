@@ -70,6 +70,9 @@ enum Command {
     /// View database contents
     #[command(subcommand)]
     Show(ShowCommand),
+    /// Manage launchd service (macOS)
+    #[command(subcommand)]
+    Service(ServiceCommand),
 }
 
 #[derive(Subcommand)]
@@ -101,6 +104,20 @@ enum ShowCommand {
         #[arg(long, default_value = "20")]
         limit: i64,
     },
+}
+
+#[derive(Subcommand)]
+enum ServiceCommand {
+    /// Install launchd plist to ~/Library/LaunchAgents/
+    Install,
+    /// Remove launchd plist
+    Uninstall,
+    /// Start the launchd service
+    Start,
+    /// Stop the launchd service
+    Stop,
+    /// Show service status
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -137,6 +154,18 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    // service subcommands don't need DB or config
+    if let Command::Service(sub) = cli.command {
+        match sub {
+            ServiceCommand::Install => cmd::service::install()?,
+            ServiceCommand::Uninstall => cmd::service::uninstall()?,
+            ServiceCommand::Start => cmd::service::start()?,
+            ServiceCommand::Stop => cmd::service::stop()?,
+            ServiceCommand::Status => cmd::service::status()?,
+        }
+        return Ok(());
+    }
+
     let conn = db::init_db().await?;
 
     // show subcommands don't need config
@@ -162,7 +191,7 @@ async fn main() -> Result<()> {
     let config = config::AppConfig::load()?;
 
     match cli.command {
-        Command::Config(_) | Command::Show(_) => unreachable!(),
+        Command::Config(_) | Command::Show(_) | Command::Service(_) => unreachable!(),
         Command::Discover => {
             let result = cmd::discover::run(&conn, &config).await?;
             output::print_output(&result, cli.format);

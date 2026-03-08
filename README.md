@@ -104,6 +104,7 @@ flowchart LR
 
 | コマンド | DB | LLM | 外部 API |
 |---------|:--:|:---:|:--------:|
+| `workflow run` | R/W | ✓ | J-Quants |
 | `scan` | W | - | J-Quants |
 | `fetch` | R/W | ✓ | - |
 | `eval` | R/W | ✓ | - |
@@ -230,7 +231,12 @@ path = "specs/my-strategy.toml"
 ## 使い方
 
 ```sh
-# 日次パイプライン
+# ワークフロー（単一プロセスで全パイプラインを実行）
+kabu workflow run                    # discover → scan → fetch → eval を一括実行
+kabu workflow run --skip discover    # discover をスキップ（日次用途）
+kabu workflow run --skip discover --skip scan  # fetch から開始
+
+# 個別コマンド実行
 kabu discover                        # LLM で有望銘柄を発掘・watchlist 更新
 kabu scan --refresh-master --days 60  # 初回は --refresh-master 必須
 kabu fetch
@@ -270,15 +276,17 @@ kabu service status
 kabu service uninstall
 ```
 
-デフォルトでは毎日 08:00 に `discover → scan → fetch → eval` パイプラインが実行されます。
+デフォルトでは毎日 08:00 に `kabu workflow run` でパイプライン全体が実行されます。
+`workflow run` は銘柄ごとにエラーを分離するため、1銘柄の失敗が他の銘柄の処理を止めません。
 
 ### 手動実行
 
 ```sh
-# 週次: 銘柄マスター更新 + フルパイプライン
-kabu discover && kabu scan --refresh-master --days 60 && kabu fetch && kabu eval
+# ワークフロー（推奨）
+kabu workflow run                    # フルパイプライン
+kabu workflow run --skip discover    # 日次（discover スキップ）
 
-# 日次: 銘柄発掘 → データ収集 → 評価
+# 個別コマンドで実行する場合
 kabu discover && kabu scan --days 60 && kabu fetch && kabu eval
 
 # 市場オープン: 実行

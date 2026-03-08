@@ -177,7 +177,15 @@ pub async fn run(
 
         info!(ticker = %target.ticker, status = %target.status, backend = %config.llm.eval, "Running evaluation");
 
-        let response_text = backend.send_message(&prompt, 4096).await?;
+        let response_text = backend
+            .send_message_with_schema(
+                &prompt,
+                4096,
+                "eval_stock",
+                "Evaluate a stock and return structured judgment",
+                eval_response_schema(),
+            )
+            .await?;
         let eval_response = parse_eval_response(&response_text)?;
 
         db::save_evaluation(
@@ -385,6 +393,35 @@ Respond ONLY with a JSON object in this exact format (no markdown, no code block
   }}
 }}"#
     )
+}
+
+fn eval_response_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "required": ["ticker", "status", "decision", "score", "analysis"],
+        "properties": {
+            "ticker": { "type": "string" },
+            "status": { "type": "string", "enum": ["Hunting", "Farming"] },
+            "decision": { "type": "string", "enum": ["Buy", "Avoid", "Hold", "Sell"] },
+            "score": { "type": "integer", "minimum": -100, "maximum": 100 },
+            "analysis": {
+                "type": "object",
+                "required": ["catalyst_check", "risk_assessment", "spec_compliance"],
+                "properties": {
+                    "catalyst_check": { "type": "string" },
+                    "risk_assessment": { "type": "string" },
+                    "spec_compliance": { "type": "string" }
+                }
+            },
+            "execution_instruction": {
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string" },
+                    "reason_for_exit": { "type": "string" }
+                }
+            }
+        }
+    })
 }
 
 fn parse_eval_response(text: &str) -> Result<EvalResponse> {

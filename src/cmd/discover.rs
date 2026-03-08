@@ -80,7 +80,15 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
 
     info!(backend = %config.llm.fetch, "Discovering stock candidates");
 
-    let response_text = backend.send_message(&prompt, 8192).await?;
+    let response_text = backend
+        .send_message_with_schema(
+            &prompt,
+            8192,
+            "discover_stocks",
+            "Discover stock candidates and return structured watchlist actions",
+            discover_response_schema(),
+        )
+        .await?;
     let response = parse_discover_response(&response_text)?;
 
     // Get held tickers to protect from removal
@@ -215,6 +223,35 @@ Respond ONLY with a JSON object in this exact format (no markdown, no code block
   ]
 }}"#
     )
+}
+
+fn discover_response_schema() -> serde_json::Value {
+    let action_schema = serde_json::json!({
+        "type": "object",
+        "required": ["ticker"],
+        "properties": {
+            "ticker": { "type": "string" },
+            "name": { "type": "string" },
+            "reason": { "type": "string" }
+        }
+    });
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "keep": {
+                "type": "array",
+                "items": action_schema
+            },
+            "add": {
+                "type": "array",
+                "items": action_schema
+            },
+            "remove": {
+                "type": "array",
+                "items": action_schema
+            }
+        }
+    })
 }
 
 fn parse_discover_response(text: &str) -> Result<DiscoverResponse> {

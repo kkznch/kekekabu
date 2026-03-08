@@ -39,6 +39,67 @@ report: 評価結果を Markdown レポートに出力
 
 > **ポイント**: watchlist から外れても、ポートフォリオに保有がある限り eval の対象になり続けます（Hold/Sell 判断）。watchlist からの除外は売りの直接トリガーではありません。
 
+### データフロー
+
+各コマンドがどのデータを生成（→）し、どのデータを参照（←）するかを示します。
+
+```mermaid
+flowchart LR
+    subgraph commands[コマンド]
+        discover
+        scan
+        fetch
+        eval
+        execute
+        report
+    end
+
+    subgraph db[DB Tables]
+        stocks[(stocks)]
+        prices[(prices)]
+        watchlist[(watchlist)]
+        wl_events[(watchlist_events)]
+        fetch_results[(fetch_results)]
+        evaluations[(evaluations)]
+        positions[(portfolio_positions)]
+        trades[(trades)]
+    end
+
+    discover -->|add/remove| watchlist
+    discover -->|add/remove/keep| wl_events
+    discover -->|name| stocks
+
+    scan -->|info| stocks
+    scan -->|OHLCV| prices
+    watchlist -.->|対象銘柄| scan
+
+    watchlist -.->|対象銘柄| fetch
+    stocks -.->|stock_id| fetch
+    fetch -->|news/disclosure/sentiment| fetch_results
+
+    watchlist -.->|対象銘柄| eval
+    positions -.->|保有状況| eval
+    prices -.->|TA算出| eval
+    fetch_results -.->|最新情報| eval
+    trades -.->|残予算| eval
+    eval -->|Buy/Sell/Hold/Avoid| evaluations
+
+    evaluations -.->|過去履歴| eval
+
+    evaluations -.->|当日の判断| execute
+    positions -.->|保有確認| execute
+    prices -.->|CB判定| execute
+    execute -->|約定時| positions
+    execute -->|約定記録| trades
+    execute -->|売却時auto-remove| watchlist
+
+    evaluations -.->|判断結果| report
+    fetch_results -.->|関連情報| report
+    stocks -.->|銘柄名| report
+```
+
+> 実線（→）= 書き込み、点線（-.->）= 読み取り
+
 ### 依存関係マトリクス
 
 | コマンド | DB | LLM | 外部 API |
@@ -48,7 +109,6 @@ report: 評価結果を Markdown レポートに出力
 | `eval` | R/W | ✓ | - |
 | `execute` | R | - | - |
 | `report` | R | - | - |
-| `portfolio` | R/W | - | - |
 | `show` | R | - | - |
 | `config init` | - | - | - |
 | `config validate` | - | - | - |
@@ -185,13 +245,8 @@ kabu show positions                 # 保有ポジション
 kabu show evaluations               # 評価履歴
 kabu show stocks                    # 登録銘柄一覧
 kabu show tables                    # テーブル統計
-
-# ポートフォリオ管理
-kabu portfolio buy 7203 --quantity 100 --price 2000
-kabu portfolio sell 7203 --quantity 50 --price 2200
-kabu portfolio positions
-kabu portfolio summary
-kabu portfolio trades
+kabu show summary                   # ポートフォリオサマリー
+kabu show trades                    # 取引履歴
 ```
 
 出力はデフォルトで JSON（stdout）。`--format human` で人間向け表示に切り替え可能。
@@ -235,3 +290,5 @@ just --list         # タスク一覧
 - **サーキットブレーカー**: 個別銘柄 >30% 変動、またはウォッチリストの >50% が >5% 下落した場合に execute をブロック
 - **ドライラン**: `execute --dry-run` がデフォルト
 - **投資 Spec**: TOML で戦略パラメータを外部管理、SHA256 ハッシュで評価時の Spec を追跡
+- **eval 履歴注入**: 直近3件の評価履歴を LLM プロンプトに注入し、売→再買のフリップフロップを抑制
+- **売却時 watchlist 自動除外**: ポジション全量売却時に watchlist から自動除外し、再評価ループを防止

@@ -142,6 +142,26 @@ pub async fn run(
             s
         };
 
+        // Get recent evaluation history for this stock
+        let recent_evals = db::get_recent_evaluations_by_stock(conn, target.stock_id, 3).await?;
+        let history_section = if recent_evals.is_empty() {
+            None
+        } else {
+            let mut s = String::from("## Past Evaluations (most recent first)\n");
+            for eval in &recent_evals {
+                let date = eval
+                    .evaluated_at
+                    .split('T')
+                    .next()
+                    .unwrap_or(&eval.evaluated_at);
+                s.push_str(&format!(
+                    "- {}: {} (score: {}) — {}\n",
+                    date, eval.decision, eval.score, eval.rationale
+                ));
+            }
+            Some(s)
+        };
+
         let prompt = build_eval_prompt(
             &target.ticker,
             &target.name,
@@ -152,6 +172,7 @@ pub async fn run(
             spec_section.as_deref(),
             target.position_info.as_ref(),
             budget_context.as_deref(),
+            history_section.as_deref(),
         );
 
         info!(ticker = %target.ticker, status = %target.status, backend = %config.llm.eval, "Running evaluation");
@@ -193,10 +214,7 @@ pub async fn run(
     Ok(results)
 }
 
-async fn build_eval_targets(
-    conn: &Connection,
-    tickers: &[String],
-) -> Result<Vec<EvalTarget>> {
+async fn build_eval_targets(conn: &Connection, tickers: &[String]) -> Result<Vec<EvalTarget>> {
     let watchlist = db::watchlist_list(conn).await?;
     let positions = portfolio::list_positions(conn).await?;
 
@@ -213,17 +231,18 @@ async fn build_eval_targets(
         }
         seen.insert(item.ticker.clone());
 
-        let position_info = positions
-            .iter()
-            .find(|p| p.ticker == item.ticker)
-            .map(|p| PositionInfo {
-                quantity: p.quantity.to_string(),
-                avg_cost: p.avg_cost.to_string(),
-                unrealized_pnl_pct: p
-                    .unrealized_pnl_pct
-                    .map(|v| format!("{:.1}%", v))
-                    .unwrap_or_else(|| "N/A".to_string()),
-            });
+        let position_info =
+            positions
+                .iter()
+                .find(|p| p.ticker == item.ticker)
+                .map(|p| PositionInfo {
+                    quantity: p.quantity.to_string(),
+                    avg_cost: p.avg_cost.to_string(),
+                    unrealized_pnl_pct: p
+                        .unrealized_pnl_pct
+                        .map(|v| format!("{:.1}%", v))
+                        .unwrap_or_else(|| "N/A".to_string()),
+                });
 
         let status = if held_tickers.contains(&item.ticker) {
             "ExistingHolding"
@@ -284,11 +303,17 @@ fn build_eval_prompt(
     spec_section: Option<&str>,
     position_info: Option<&PositionInfo>,
     budget_context: Option<&str>,
+    history_section: Option<&str>,
 ) -> String {
-    let spec_part = spec_section.unwrap_or("No investment spec loaded. Use general best practices.");
+    let spec_part =
+        spec_section.unwrap_or("No investment spec loaded. Use general best practices.");
 
     let budget_part = budget_context
         .map(|b| format!("\n{b}\n"))
+        .unwrap_or_default();
+
+    let history_part = history_section
+        .map(|h| format!("\n{h}\n"))
         .unwrap_or_default();
 
     let status_section = match status {
@@ -301,7 +326,10 @@ fn build_eval_prompt(
                     )
                 })
                 .unwrap_or_else(|| "- Status: ExistingHolding (保有中)".to_string());
-            format!("{}\n- Task: Decide whether to Hold or Sell. Check if the original investment thesis still holds.", pos)
+            format!(
+                "{}\n- Task: Decide whether to Hold or Sell. Check if the original investment thesis still holds.",
+                pos
+            )
         }
         _ => "- Status: NewTarget (新規候補)\n- Task: Decide whether to Buy or Avoid.".to_string(),
     };
@@ -331,8 +359,8 @@ fn build_eval_prompt(
 
 ## Investment Policy
 {spec_part}
-{budget_part}
-## Instructions
+{budget_part}{history_part}## Instructions
+**IMPORTANT**: Past evaluations are reference context only. Your decision MUST be based on current data and fundamentals. If your decision differs from recent history, explain why.
 Analyze this stock and provide your evaluation. Consider:
 1. Catalyst validity — Is the original investment thesis or new catalyst still valid?
 2. Risk assessment — Downside revision risk, FX sensitivity, technical overheating
@@ -361,8 +389,13 @@ Respond ONLY with a JSON object in this exact format (no markdown, no code block
 
 fn parse_eval_response(text: &str) -> Result<EvalResponse> {
     let json_str = extract_json(text);
-    serde_json::from_str(json_str)
-        .map_err(|e| anyhow::anyhow!("Failed to parse eval response as JSON: {}\nRaw: {}", e, text))
+    serde_json::from_str(json_str).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse eval response as JSON: {}\nRaw: {}",
+            e,
+            text
+        )
+    })
 }
 
 fn extract_json(text: &str) -> &str {
@@ -449,5 +482,72 @@ mod tests {
     fn test_extract_json() {
         let text = "Here is the result: {\"key\": \"value\"} done.";
         assert_eq!(extract_json(text), r#"{"key": "value"}"#);
+    }
+
+    #[test]
+    fn test_build_eval_prompt_includes_history_section() {
+        let history = "## Past Evaluations (most recent first)\n\
+                       - 2026-03-07: Buy (score: 80) — Strong earnings\n\
+                       - 2026-03-06: Avoid (score: 30) — High risk\n";
+        let prompt = build_eval_prompt(
+            "7203",
+            "Toyota",
+            "NewTarget",
+            "{}",
+            "None",
+            "No recent information available.",
+            None,
+            None,
+            None,
+            Some(history),
+        );
+        assert!(prompt.contains("## Past Evaluations (most recent first)"));
+        assert!(prompt.contains("Buy (score: 80)"));
+        assert!(prompt.contains("Avoid (score: 30)"));
+        assert!(prompt.contains("Past evaluations are reference context only"));
+    }
+
+    #[test]
+    fn test_build_eval_prompt_no_history() {
+        let prompt = build_eval_prompt(
+            "7203",
+            "Toyota",
+            "NewTarget",
+            "{}",
+            "None",
+            "No recent information available.",
+            None,
+            None,
+            None,
+            None,
+        );
+        assert!(!prompt.contains("## Past Evaluations"));
+        // Anti-anchoring instruction is always present
+        assert!(prompt.contains("Past evaluations are reference context only"));
+    }
+
+    #[test]
+    fn test_build_eval_prompt_existing_holding_with_position() {
+        let pos = PositionInfo {
+            quantity: "100".to_string(),
+            avg_cost: "2000".to_string(),
+            unrealized_pnl_pct: "5.0%".to_string(),
+        };
+        let prompt = build_eval_prompt(
+            "7203",
+            "Toyota",
+            "ExistingHolding",
+            "{}",
+            "None",
+            "No recent information available.",
+            None,
+            Some(&pos),
+            None,
+            None,
+        );
+        assert!(prompt.contains("Hold|Sell"));
+        assert!(prompt.contains("Quantity: 100"));
+        assert!(prompt.contains("Average Cost: 2000"));
+        assert!(prompt.contains("Unrealized P&L: 5.0%"));
     }
 }

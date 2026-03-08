@@ -25,11 +25,7 @@ pub struct ExecuteAction {
     pub detail: String,
 }
 
-pub async fn run(
-    conn: &Connection,
-    _config: &AppConfig,
-    dry_run: bool,
-) -> Result<ExecuteResult> {
+pub async fn run(conn: &Connection, _config: &AppConfig, dry_run: bool) -> Result<ExecuteResult> {
     // 1. Circuit breaker check
     let cb = circuit_breaker::check(conn).await?;
     if !cb.safe {
@@ -63,7 +59,10 @@ pub async fn run(
         let (action_type, detail) = match eval.decision.as_str() {
             "Buy" if eval.score >= 70 => {
                 let detail = if dry_run {
-                    format!("[DRY RUN] Would place buy order for {} (score: {})", eval.ticker, eval.score)
+                    format!(
+                        "[DRY RUN] Would place buy order for {} (score: {})",
+                        eval.ticker, eval.score
+                    )
                 } else {
                     format!(
                         "Buy signal recorded for {} (score: {}). Tachibana API integration pending.",
@@ -72,13 +71,20 @@ pub async fn run(
                 };
                 ("buy_signal", detail)
             }
-            "Buy" => {
-                ("hold", format!("Buy signal for {} but score too low ({} < 70), skipping", eval.ticker, eval.score))
-            }
+            "Buy" => (
+                "hold",
+                format!(
+                    "Buy signal for {} but score too low ({} < 70), skipping",
+                    eval.ticker, eval.score
+                ),
+            ),
             "Sell" => {
                 if held_tickers.contains(&eval.ticker) {
                     let detail = if dry_run {
-                        format!("[DRY RUN] Would place sell order for {} (score: {})", eval.ticker, eval.score)
+                        format!(
+                            "[DRY RUN] Would place sell order for {} (score: {})",
+                            eval.ticker, eval.score
+                        )
                     } else {
                         format!(
                             "Sell signal recorded for {} (score: {}). Tachibana API integration pending.",
@@ -87,18 +93,26 @@ pub async fn run(
                     };
                     ("sell_signal", detail)
                 } else {
-                    ("hold", format!("Sell signal for {} but no position held, skipping", eval.ticker))
+                    (
+                        "hold",
+                        format!(
+                            "Sell signal for {} but no position held, skipping",
+                            eval.ticker
+                        ),
+                    )
                 }
             }
-            "Avoid" if eval.score <= 30 => {
-                ("sell_signal", format!(
+            "Avoid" if eval.score <= 30 => (
+                "sell_signal",
+                format!(
                     "Avoid signal for {} (score: {}). Review existing positions.",
                     eval.ticker, eval.score
-                ))
-            }
-            _ => {
-                ("hold", format!("Hold for {} (score: {})", eval.ticker, eval.score))
-            }
+                ),
+            ),
+            _ => (
+                "hold",
+                format!("Hold for {} (score: {})", eval.ticker, eval.score),
+            ),
         };
 
         actions.push(ExecuteAction {

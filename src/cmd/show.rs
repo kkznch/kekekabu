@@ -40,3 +40,15 @@ pub async fn tables(conn: &Connection, format: OutputFormat) -> Result<()> {
     output::print_list_output(&stats, format);
     Ok(())
 }
+
+pub async fn summary(conn: &Connection, format: OutputFormat) -> Result<()> {
+    let sum = portfolio::summary(conn).await?;
+    output::print_output(&sum, format);
+    Ok(())
+}
+
+pub async fn trades(conn: &Connection, limit: i64, format: OutputFormat) -> Result<()> {
+    let trades = portfolio::trade_history(conn, limit).await?;
+    output::print_list_output(&trades, format);
+    Ok(())
+}

@@ -25,7 +25,11 @@ pub fn create_backend(
 ) -> Result<Box<dyn LlmBackend>> {
     match backend_type {
         "api-anthropic" => {
-            let key = require_key(&api_config.anthropic_api_key, "ANTHROPIC_API_KEY", "api-anthropic")?;
+            let key = require_key(
+                &api_config.anthropic_api_key,
+                "ANTHROPIC_API_KEY",
+                "api-anthropic",
+            )?;
             Ok(Box::new(ApiAnthropicBackend::new(
                 key,
                 model.map(|s| s.to_string()),
@@ -40,11 +44,15 @@ pub fn create_backend(
         }
         "cli-claude" => {
             CliClaudeBackend::check_available()?;
-            Ok(Box::new(CliClaudeBackend::new(model.map(|s| s.to_string()))))
+            Ok(Box::new(CliClaudeBackend::new(
+                model.map(|s| s.to_string()),
+            )))
         }
         "cli-gemini" => {
             CliGeminiBackend::check_available()?;
-            Ok(Box::new(CliGeminiBackend::new(model.map(|s| s.to_string()))))
+            Ok(Box::new(CliGeminiBackend::new(
+                model.map(|s| s.to_string()),
+            )))
         }
         _ => {
             bail!(

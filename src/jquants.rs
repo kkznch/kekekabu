@@ -72,7 +72,11 @@ impl JQuantsClient {
 
             if resp.status() == StatusCode::TOO_MANY_REQUESTS {
                 let wait = 2u64.pow(attempt + 1);
-                warn!(attempt = attempt + 1, wait_secs = wait, "Rate limited, retrying");
+                warn!(
+                    attempt = attempt + 1,
+                    wait_secs = wait,
+                    "Rate limited, retrying"
+                );
                 tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
                 continue;
             }

@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS evaluations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     stock_id INTEGER NOT NULL REFERENCES stocks(id),
     evaluated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    decision TEXT NOT NULL CHECK(decision IN ('Buy', 'Hold', 'Avoid')),
+    decision TEXT NOT NULL CHECK(decision IN ('Buy', 'Hold', 'Sell', 'Avoid')),
     score INTEGER NOT NULL CHECK(score BETWEEN 0 AND 100),
     rationale TEXT NOT NULL,
     ta_summary TEXT,
@@ -98,7 +98,7 @@ pub const CREATE_WATCHLIST_EVENTS_TABLE: &str = "
 CREATE TABLE IF NOT EXISTS watchlist_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ticker TEXT NOT NULL,
-    action TEXT NOT NULL CHECK(action IN ('add', 'remove', 'keep')),
+    action TEXT NOT NULL CHECK(action IN ('add', 'remove', 'keep', 'auto-removed-on-sell')),
     reason TEXT,
     discovered_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

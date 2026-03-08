@@ -81,7 +81,10 @@ impl HumanDisplay for crate::cmd::eval::EvalResult {
             println!("  Action: {}", self.execution_instruction.action);
         }
         if !self.execution_instruction.reason_for_exit.is_empty() {
-            println!("  Exit Reason: {}", self.execution_instruction.reason_for_exit);
+            println!(
+                "  Exit Reason: {}",
+                self.execution_instruction.reason_for_exit
+            );
         }
     }
 }
@@ -208,9 +211,7 @@ impl HumanDisplay for crate::portfolio::TradeRecord {
             self.date,
             self.quantity,
             self.price,
-            self.pnl
-                .map(|p| format!("P&L: {}", p))
-                .unwrap_or_default()
+            self.pnl.map(|p| format!("P&L: {}", p)).unwrap_or_default()
         );
     }
 }

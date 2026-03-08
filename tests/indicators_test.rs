@@ -1,7 +1,9 @@
 use kekekabu::indicators::*;
 
 fn sample_closes(n: usize) -> Vec<f64> {
-    (0..n).map(|i| 100.0 + (i as f64) * 0.5 + (i as f64 * 0.3).sin() * 5.0).collect()
+    (0..n)
+        .map(|i| 100.0 + (i as f64) * 0.5 + (i as f64 * 0.3).sin() * 5.0)
+        .collect()
 }
 
 #[test]

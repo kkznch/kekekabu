@@ -33,10 +33,10 @@ src/
     discover.rs      LLM stock discovery + watchlist management
     scan.rs          J-Quants fetch + TA indicators
     fetch.rs         Gemini info gathering (news, disclosure, sentiment)
-    eval.rs          LLM investment evaluation (Hunting: Buy/Avoid, Farming: Hold/Sell)
+    eval.rs          LLM investment evaluation (Hunting: Buy/Avoid, Farming: Hold/Sell) + history injection
     execute.rs       Trade execution (circuit breaker + Buy/Sell signals)
     report.rs        Markdown report generation
-    show.rs          DB viewer (watchlist, events, positions, evaluations, stocks, tables)
+    show.rs          DB viewer (watchlist, events, positions, evaluations, stocks, tables, summary, trades)
     config.rs        Config init + validate handlers
 ```
 
@@ -49,6 +49,8 @@ src/
 - **Default JSON output** — `--format human` for table display
 - **Logs to stderr** — structured via `tracing`, so stdout is clean JSON
 - **Circuit breaker** — blocks execute on >30% individual stock moves or >50% market decline
+- **Eval history** — injects last 3 evaluations per stock into LLM prompt to prevent flip-flopping
+- **Watchlist auto-cleanup** — auto-removes stock from watchlist when position is fully sold
 
 ## Commands
 
@@ -74,13 +76,8 @@ kabu show positions                  # Active positions
 kabu show evaluations                # Past evaluations
 kabu show stocks                     # Registered stocks
 kabu show tables                     # Table row counts
-
-# Portfolio management
-kabu portfolio buy 7203 --quantity 100 --price 2000
-kabu portfolio sell 7203 --quantity 50 --price 2200
-kabu portfolio positions             # Active positions
-kabu portfolio summary               # Portfolio summary
-kabu portfolio trades                # Trade history
+kabu show summary                    # Portfolio summary
+kabu show trades                     # Trade history
 ```
 
 ## Automation (cron/launchd)

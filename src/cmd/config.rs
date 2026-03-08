@@ -33,9 +33,17 @@ pub fn validate() -> Result<()> {
 }
 
 fn ok_mark(color: bool) -> &'static str {
-    if color { "\x1b[32m\u{2713}\x1b[0m" } else { "\u{2713}" }
+    if color {
+        "\x1b[32m\u{2713}\x1b[0m"
+    } else {
+        "\u{2713}"
+    }
 }
 
 fn fail_mark(color: bool) -> &'static str {
-    if color { "\x1b[31m\u{2717}\x1b[0m" } else { "\u{2717}" }
+    if color {
+        "\x1b[31m\u{2717}\x1b[0m"
+    } else {
+        "\u{2717}"
+    }
 }

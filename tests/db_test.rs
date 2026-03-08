@@ -173,11 +173,13 @@ async fn test_trade_cash_summary_empty() -> Result<()> {
 async fn test_trade_cash_summary_buy_only() -> Result<()> {
     let conn = setup_db().await?;
     kekekabu::portfolio::buy(
-        &conn, "7203",
+        &conn,
+        "7203",
         rust_decimal::Decimal::from(100),
         rust_decimal::Decimal::from(2000),
         None,
-    ).await?;
+    )
+    .await?;
     let summary = kekekabu::db::trade_cash_summary(&conn).await?;
     assert!((summary.total_invested - 200000.0).abs() < 0.01);
     assert!((summary.total_recovered - 0.0).abs() < 0.01);
@@ -188,17 +190,21 @@ async fn test_trade_cash_summary_buy_only() -> Result<()> {
 async fn test_trade_cash_summary_buy_and_sell() -> Result<()> {
     let conn = setup_db().await?;
     kekekabu::portfolio::buy(
-        &conn, "7203",
+        &conn,
+        "7203",
         rust_decimal::Decimal::from(100),
         rust_decimal::Decimal::from(2000),
         None,
-    ).await?;
+    )
+    .await?;
     kekekabu::portfolio::sell(
-        &conn, "7203",
+        &conn,
+        "7203",
         rust_decimal::Decimal::from(50),
         rust_decimal::Decimal::from(2200),
         None,
-    ).await?;
+    )
+    .await?;
     let summary = kekekabu::db::trade_cash_summary(&conn).await?;
     assert!((summary.total_invested - 200000.0).abs() < 0.01);
     assert!((summary.total_recovered - 110000.0).abs() < 0.01);
@@ -215,11 +221,9 @@ async fn test_save_watchlist_event() -> Result<()> {
     // Verify events were saved by querying directly
     let count: i64 = conn
         .call(|conn| {
-            let count = conn.query_row(
-                "SELECT COUNT(*) FROM watchlist_events",
-                [],
-                |row| row.get(0),
-            )?;
+            let count = conn.query_row("SELECT COUNT(*) FROM watchlist_events", [], |row| {
+                row.get(0)
+            })?;
             Ok::<i64, rusqlite::Error>(count)
         })
         .await?;
@@ -273,6 +277,92 @@ async fn test_list_stocks() -> Result<()> {
     assert_eq!(stocks.len(), 2);
     assert_eq!(stocks[0].ticker, "6758"); // sorted by ticker ASC
     assert_eq!(stocks[1].ticker, "7203");
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_recent_evaluations_by_stock_empty() -> Result<()> {
+    let conn = setup_db().await?;
+    let stock_id = kekekabu::db::save_stock(&conn, "7203", "Toyota", None).await?;
+
+    let evals = kekekabu::db::get_recent_evaluations_by_stock(&conn, stock_id, 3).await?;
+    assert!(evals.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_recent_evaluations_by_stock_partial() -> Result<()> {
+    let conn = setup_db().await?;
+    let stock_id = kekekabu::db::save_stock(&conn, "7203", "Toyota", None).await?;
+
+    kekekabu::db::save_evaluation(
+        &conn,
+        stock_id,
+        "Buy",
+        72,
+        "Good catalyst",
+        None,
+        None,
+        None,
+    )
+    .await?;
+    kekekabu::db::save_evaluation(&conn, stock_id, "Avoid", 35, "High risk", None, None, None)
+        .await?;
+
+    let evals = kekekabu::db::get_recent_evaluations_by_stock(&conn, stock_id, 3).await?;
+    assert_eq!(evals.len(), 2);
+    // Most recent first
+    assert_eq!(evals[0].decision, "Avoid");
+    assert_eq!(evals[1].decision, "Buy");
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_recent_evaluations_by_stock_limited() -> Result<()> {
+    let conn = setup_db().await?;
+    let stock_id = kekekabu::db::save_stock(&conn, "7203", "Toyota", None).await?;
+
+    for (decision, score) in [
+        ("Buy", 72),
+        ("Avoid", 35),
+        ("Buy", 68),
+        ("Hold", 55),
+        ("Sell", 25),
+    ] {
+        kekekabu::db::save_evaluation(
+            &conn,
+            stock_id,
+            decision,
+            score,
+            "rationale",
+            None,
+            None,
+            None,
+        )
+        .await?;
+    }
+
+    let evals = kekekabu::db::get_recent_evaluations_by_stock(&conn, stock_id, 3).await?;
+    assert_eq!(evals.len(), 3);
+    // Most recent 3 only
+    assert_eq!(evals[0].decision, "Sell");
+    assert_eq!(evals[1].decision, "Hold");
+    assert_eq!(evals[2].decision, "Buy");
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_recent_evaluations_by_stock_filters_by_stock() -> Result<()> {
+    let conn = setup_db().await?;
+    let id1 = kekekabu::db::save_stock(&conn, "7203", "Toyota", None).await?;
+    let id2 = kekekabu::db::save_stock(&conn, "6758", "Sony", None).await?;
+
+    kekekabu::db::save_evaluation(&conn, id1, "Buy", 72, "Toyota eval", None, None, None).await?;
+    kekekabu::db::save_evaluation(&conn, id2, "Avoid", 30, "Sony eval", None, None, None).await?;
+
+    let evals = kekekabu::db::get_recent_evaluations_by_stock(&conn, id1, 3).await?;
+    assert_eq!(evals.len(), 1);
+    assert_eq!(evals[0].ticker, "7203");
     Ok(())
 }
 

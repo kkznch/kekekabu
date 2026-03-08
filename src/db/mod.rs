@@ -179,11 +179,7 @@ pub struct WatchlistItem {
     pub added_at: String,
 }
 
-pub async fn watchlist_add(
-    conn: &Connection,
-    ticker: &str,
-    notes: Option<&str>,
-) -> Result<()> {
+pub async fn watchlist_add(conn: &Connection, ticker: &str, notes: Option<&str>) -> Result<()> {
     let ticker = ticker.to_string();
     let ticker_ctx = ticker.clone();
     let notes = notes.map(|s| s.to_string());
@@ -263,6 +259,7 @@ pub struct Evaluation {
     pub evaluated_at: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn save_evaluation(
     conn: &Connection,
     stock_id: i64,
@@ -354,6 +351,7 @@ pub struct FetchResult {
     pub fetched_at: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn save_fetch_result(
     conn: &Connection,
     stock_id: i64,
@@ -528,9 +526,8 @@ pub struct StockInfo {
 
 pub async fn list_stocks(conn: &Connection) -> Result<Vec<StockInfo>> {
     conn.call(|conn| {
-        let mut stmt = conn.prepare(
-            "SELECT ticker, name, sector, created_at FROM stocks ORDER BY ticker ASC",
-        )?;
+        let mut stmt = conn
+            .prepare("SELECT ticker, name, sector, created_at FROM stocks ORDER BY ticker ASC")?;
         let rows = stmt
             .query_map([], |row| {
                 Ok(StockInfo {
@@ -568,11 +565,9 @@ pub async fn table_stats(conn: &Connection) -> Result<Vec<TableStat>> {
         let mut stats = Vec::new();
         for table in tables {
             let count: i64 = conn
-                .query_row(
-                    &format!("SELECT COUNT(*) FROM {table}"),
-                    [],
-                    |row| row.get(0),
-                )
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
                 .unwrap_or(0);
             stats.push(TableStat {
                 table_name: table.to_string(),
@@ -583,6 +578,40 @@ pub async fn table_stats(conn: &Connection) -> Result<Vec<TableStat>> {
     })
     .await
     .context("Failed to get table stats")
+}
+
+pub async fn get_recent_evaluations_by_stock(
+    conn: &Connection,
+    stock_id: i64,
+    limit: i64,
+) -> Result<Vec<Evaluation>> {
+    conn.call(move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT e.id, s.ticker, s.name, e.decision, e.score, e.rationale, e.ta_summary, e.evaluated_at
+             FROM evaluations e
+             JOIN stocks s ON s.id = e.stock_id
+             WHERE e.stock_id = ?1
+             ORDER BY e.id DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(rusqlite::params![stock_id, limit], |row| {
+                Ok(Evaluation {
+                    id: row.get(0)?,
+                    ticker: row.get(1)?,
+                    name: row.get(2)?,
+                    decision: row.get(3)?,
+                    score: row.get(4)?,
+                    rationale: row.get(5)?,
+                    ta_summary: row.get(6)?,
+                    evaluated_at: row.get(7)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok::<Vec<Evaluation>, rusqlite::Error>(rows)
+    })
+    .await
+    .context("Failed to get recent evaluations by stock")
 }
 
 pub async fn get_latest_evaluations_for_today(conn: &Connection) -> Result<Vec<Evaluation>> {

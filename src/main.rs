@@ -6,13 +6,13 @@ mod indicators;
 mod jquants;
 mod llm;
 mod output;
+#[allow(dead_code)]
 mod portfolio;
 mod spec;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use output::OutputFormat;
-use rust_decimal::Decimal;
 
 #[derive(Parser)]
 #[command(name = "kabu", about = "JP stock investment CLI")]
@@ -65,9 +65,6 @@ enum Command {
         #[arg(long, short)]
         output: Option<String>,
     },
-    /// Manage portfolio positions
-    #[command(subcommand)]
-    Portfolio(PortfolioCommand),
     /// View database contents
     #[command(subcommand)]
     Show(ShowCommand),
@@ -95,32 +92,6 @@ enum ShowCommand {
     Stocks,
     /// Table row counts
     Tables,
-}
-
-#[derive(Subcommand)]
-enum PortfolioCommand {
-    /// Record a buy
-    Buy {
-        ticker: String,
-        #[arg(long)]
-        quantity: Decimal,
-        #[arg(long)]
-        price: Decimal,
-        #[arg(long)]
-        strategy: Option<String>,
-    },
-    /// Record a sell
-    Sell {
-        ticker: String,
-        #[arg(long)]
-        quantity: Decimal,
-        #[arg(long)]
-        price: Decimal,
-        #[arg(long)]
-        strategy: Option<String>,
-    },
-    /// List active positions
-    Positions,
     /// Portfolio summary
     Summary,
     /// Trade history
@@ -180,6 +151,8 @@ async fn main() -> Result<()> {
             }
             ShowCommand::Stocks => cmd::show::stocks(&conn, format).await?,
             ShowCommand::Tables => cmd::show::tables(&conn, format).await?,
+            ShowCommand::Summary => cmd::show::summary(&conn, format).await?,
+            ShowCommand::Trades { limit } => cmd::show::trades(&conn, limit, format).await?,
         }
         return Ok(());
     }
@@ -217,38 +190,6 @@ async fn main() -> Result<()> {
                 print!("{}", md);
             }
         }
-        Command::Portfolio(sub) => match sub {
-            PortfolioCommand::Buy {
-                ticker,
-                quantity,
-                price,
-                strategy,
-            } => {
-                portfolio::buy(&conn, &ticker, quantity, price, strategy.as_deref()).await?;
-                eprintln!("Recorded buy: {} x {} @ {}", ticker, quantity, price);
-            }
-            PortfolioCommand::Sell {
-                ticker,
-                quantity,
-                price,
-                strategy,
-            } => {
-                portfolio::sell(&conn, &ticker, quantity, price, strategy.as_deref()).await?;
-                eprintln!("Recorded sell: {} x {} @ {}", ticker, quantity, price);
-            }
-            PortfolioCommand::Positions => {
-                let positions = portfolio::list_positions(&conn).await?;
-                output::print_list_output(&positions, cli.format);
-            }
-            PortfolioCommand::Summary => {
-                let sum = portfolio::summary(&conn).await?;
-                output::print_output(&sum, cli.format);
-            }
-            PortfolioCommand::Trades { limit } => {
-                let trades = portfolio::trade_history(&conn, limit).await?;
-                output::print_list_output(&trades, cli.format);
-            }
-        },
     }
 
     Ok(())

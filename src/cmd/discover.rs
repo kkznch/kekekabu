@@ -119,7 +119,8 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
         }
         if held_tickers.contains(&action.ticker) {
             info!(ticker = %action.ticker, "Kept in watchlist (has active position)");
-            db::save_watchlist_event(conn, &action.ticker, "keep", Some("has active position")).await?;
+            db::save_watchlist_event(conn, &action.ticker, "keep", Some("has active position"))
+                .await?;
             kept.push(action.ticker.clone());
         } else {
             db::watchlist_remove(conn, &action.ticker).await?;
@@ -153,14 +154,13 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
     })
 }
 
-
 fn build_discover_prompt(
     spec_section: Option<&str>,
     budget_context: Option<&str>,
     watchlist_context: Option<&str>,
 ) -> String {
-    let spec_part =
-        spec_section.unwrap_or("No investment spec loaded. Use general best practices for JP stocks.");
+    let spec_part = spec_section
+        .unwrap_or("No investment spec loaded. Use general best practices for JP stocks.");
 
     let budget_part = budget_context
         .map(|b| format!("\n{b}\n"))
@@ -168,7 +168,9 @@ fn build_discover_prompt(
 
     let watchlist_part = watchlist_context
         .map(|w| format!("\n{w}\n"))
-        .unwrap_or_else(|| "\n## Current Watchlist\n\nNo stocks currently tracked.\n\n".to_string());
+        .unwrap_or_else(|| {
+            "\n## Current Watchlist\n\nNo stocks currently tracked.\n\n".to_string()
+        });
 
     format!(
         r#"You are a Japanese stock market research analyst. Your task is to review and update the investment watchlist based on the investment policy below.

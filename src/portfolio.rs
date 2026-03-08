@@ -67,7 +67,13 @@ pub async fn buy(
                 "SELECT id, quantity, avg_cost FROM portfolio_positions
                  WHERE stock_id = ?1 AND is_active = 1",
                 [stock_id],
-                |row| Ok((row.get(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
             )
             .ok();
 
@@ -85,7 +91,12 @@ pub async fn buy(
                 "UPDATE portfolio_positions
                  SET quantity = ?1, avg_cost = ?2, total_invested = ?3, updated_at = datetime('now')
                  WHERE id = ?4",
-                rusqlite::params![new_qty.to_string(), new_avg.to_string(), new_invested.to_string(), pos_id],
+                rusqlite::params![
+                    new_qty.to_string(),
+                    new_avg.to_string(),
+                    new_invested.to_string(),
+                    pos_id
+                ],
             )?;
         } else {
             let buy_qty = Decimal::from_str(&quantity_str).unwrap_or_default();
@@ -160,6 +171,16 @@ pub async fn sell(
                  SET quantity = '0', total_invested = '0', is_active = 0, updated_at = datetime('now')
                  WHERE id = ?1",
                 [pos_id],
+            )?;
+
+            // Auto-remove from watchlist when position is fully closed
+            tx.execute(
+                "DELETE FROM watchlist WHERE stock_id = ?1",
+                [stock_id],
+            )?;
+            tx.execute(
+                "INSERT INTO watchlist_events (ticker, action, reason) VALUES (?1, 'auto-removed-on-sell', 'Position closed')",
+                rusqlite::params![ticker],
             )?;
         } else {
             let new_invested = old_avg * new_qty;
@@ -238,8 +259,14 @@ pub async fn summary(conn: &Connection) -> Result<PortfolioSummary> {
     let positions = list_positions(conn).await?;
     let position_count = positions.len();
     let total_invested = positions.iter().map(|p| p.total_invested).sum::<Decimal>();
-    let total_current_value = positions.iter().filter_map(|p| p.current_value).sum::<Decimal>();
-    let total_unrealized_pnl = positions.iter().filter_map(|p| p.unrealized_pnl).sum::<Decimal>();
+    let total_current_value = positions
+        .iter()
+        .filter_map(|p| p.current_value)
+        .sum::<Decimal>();
+    let total_unrealized_pnl = positions
+        .iter()
+        .filter_map(|p| p.unrealized_pnl)
+        .sum::<Decimal>();
     let total_unrealized_pnl_pct = if total_invested.is_zero() {
         None
     } else {
@@ -270,9 +297,17 @@ pub async fn trade_history(conn: &Connection, limit: i64) -> Result<Vec<TradeRec
                     ticker: row.get(0)?,
                     side: row.get(1)?,
                     date: row.get(2)?,
-                    price: row.get::<_, String>(3)?.parse::<Decimal>().unwrap_or_default(),
-                    quantity: row.get::<_, String>(4)?.parse::<Decimal>().unwrap_or_default(),
-                    pnl: row.get::<_, Option<String>>(5)?.and_then(|s| s.parse::<Decimal>().ok()),
+                    price: row
+                        .get::<_, String>(3)?
+                        .parse::<Decimal>()
+                        .unwrap_or_default(),
+                    quantity: row
+                        .get::<_, String>(4)?
+                        .parse::<Decimal>()
+                        .unwrap_or_default(),
+                    pnl: row
+                        .get::<_, Option<String>>(5)?
+                        .and_then(|s| s.parse::<Decimal>().ok()),
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;

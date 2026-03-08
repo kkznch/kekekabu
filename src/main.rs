@@ -6,7 +6,6 @@ mod indicators;
 mod jquants;
 mod llm;
 mod output;
-#[allow(dead_code)]
 mod portfolio;
 mod spec;
 

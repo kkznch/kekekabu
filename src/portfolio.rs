@@ -36,6 +36,7 @@ pub struct TradeRecord {
     pub pnl: Option<Decimal>,
 }
 
+#[allow(dead_code)] // Used by tests; will be called from execute when Tachibana API is integrated
 pub async fn buy(
     conn: &Connection,
     ticker: &str,
@@ -124,6 +125,7 @@ pub async fn buy(
     .with_context(|| format!("Failed to record buy for {}", ticker_ctx))
 }
 
+#[allow(dead_code)] // Used by tests; will be called from execute when Tachibana API is integrated
 pub async fn sell(
     conn: &Connection,
     ticker: &str,

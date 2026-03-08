@@ -587,7 +587,7 @@ pub async fn get_recent_evaluations_by_stock(
 ) -> Result<Vec<Evaluation>> {
     conn.call(move |conn| {
         let mut stmt = conn.prepare(
-            "SELECT e.id, s.ticker, s.name, e.decision, e.score, e.rationale, e.ta_summary, e.evaluated_at
+            "SELECT e.id, s.ticker, s.name, e.decision, e.score, e.rationale, e.evaluated_at
              FROM evaluations e
              JOIN stocks s ON s.id = e.stock_id
              WHERE e.stock_id = ?1
@@ -603,8 +603,8 @@ pub async fn get_recent_evaluations_by_stock(
                     decision: row.get(3)?,
                     score: row.get(4)?,
                     rationale: row.get(5)?,
-                    ta_summary: row.get(6)?,
-                    evaluated_at: row.get(7)?,
+                    ta_summary: None,
+                    evaluated_at: row.get(6)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;

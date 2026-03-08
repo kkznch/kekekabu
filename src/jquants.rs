@@ -1,10 +1,22 @@
 use anyhow::{Context, Result, bail};
+use async_trait::async_trait;
 use reqwest::StatusCode;
 use serde::Deserialize;
 use tracing::warn;
 
 const BASE_URL: &str = "https://api.jquants.com/v2";
 const MAX_RETRIES: u32 = 3;
+
+#[async_trait]
+pub trait StockApi: Send + Sync {
+    async fn get_all_stock_info(&self) -> Result<Vec<ListedInfo>>;
+    async fn get_daily_quotes(
+        &self,
+        code: &str,
+        date_from: &str,
+        date_to: &str,
+    ) -> Result<Vec<DailyQuote>>;
+}
 
 #[derive(Debug, Deserialize)]
 struct EquitiesMasterResponse {
@@ -87,7 +99,7 @@ impl JQuantsClient {
         bail!("Rate limited after {} retries: {}", MAX_RETRIES, url)
     }
 
-    pub async fn get_all_stock_info(&self) -> Result<Vec<ListedInfo>> {
+    async fn get_all_stock_info_impl(&self) -> Result<Vec<ListedInfo>> {
         let url = format!("{BASE_URL}/equities/master");
         let resp = self
             .get_with_retry(&url)
@@ -134,7 +146,7 @@ impl JQuantsClient {
         Ok(data.data.into_iter().next())
     }
 
-    pub async fn get_daily_quotes(
+    async fn get_daily_quotes_impl(
         &self,
         code: &str,
         date_from: &str,
@@ -167,5 +179,21 @@ impl JQuantsClient {
             .context("Failed to parse daily quotes response")?;
 
         Ok(data.data)
+    }
+}
+
+#[async_trait]
+impl StockApi for JQuantsClient {
+    async fn get_all_stock_info(&self) -> Result<Vec<ListedInfo>> {
+        self.get_all_stock_info_impl().await
+    }
+
+    async fn get_daily_quotes(
+        &self,
+        code: &str,
+        date_from: &str,
+        date_to: &str,
+    ) -> Result<Vec<DailyQuote>> {
+        self.get_daily_quotes_impl(code, date_from, date_to).await
     }
 }

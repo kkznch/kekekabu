@@ -6,7 +6,7 @@ use tracing::info;
 use crate::config::AppConfig;
 use crate::db;
 use crate::indicators::{self, TechnicalIndicators};
-use crate::jquants::JQuantsClient;
+use crate::jquants::StockApi;
 
 #[derive(Debug, Serialize)]
 pub struct ScanResult {
@@ -20,17 +20,15 @@ pub struct ScanResult {
 
 pub async fn run(
     conn: &Connection,
-    config: &AppConfig,
+    _config: &AppConfig,
+    api: &dyn StockApi,
     days: u32,
     refresh_master: bool,
 ) -> Result<Vec<ScanResult>> {
-    let api_key = AppConfig::require_key(&config.api.jquants_api_key, "JQUANTS_API_KEY")?;
-    let client = JQuantsClient::new(api_key);
-
     // Refresh master data if requested
     if refresh_master {
         info!("Refreshing stock master data from J-Quants API");
-        let all_stocks = client.get_all_stock_info().await?;
+        let all_stocks = api.get_all_stock_info().await?;
         let count = db::save_stocks_bulk(conn, &all_stocks).await?;
         info!(count, "Stock master data refreshed");
     } else if !db::has_any_stocks(conn).await? {
@@ -72,7 +70,7 @@ pub async fn run(
 
         info!(ticker = %item.ticker, "Fetching daily quotes");
 
-        match client
+        match api
             .get_daily_quotes(&item.ticker, &from_date, &to_date)
             .await
         {

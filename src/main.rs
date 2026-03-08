@@ -156,12 +156,13 @@ async fn main() -> Result<()> {
 
     // service subcommands don't need DB or config
     if let Command::Service(sub) = cli.command {
+        let rt = cmd::service::RealRuntime;
         match sub {
-            ServiceCommand::Install => cmd::service::install()?,
-            ServiceCommand::Uninstall => cmd::service::uninstall()?,
-            ServiceCommand::Start => cmd::service::start()?,
-            ServiceCommand::Stop => cmd::service::stop()?,
-            ServiceCommand::Status => cmd::service::status()?,
+            ServiceCommand::Install => cmd::service::install(&rt)?,
+            ServiceCommand::Uninstall => cmd::service::uninstall(&rt)?,
+            ServiceCommand::Start => cmd::service::start(&rt)?,
+            ServiceCommand::Stop => cmd::service::stop(&rt)?,
+            ServiceCommand::Status => cmd::service::status(&rt)?,
         }
         return Ok(());
     }
@@ -200,7 +201,11 @@ async fn main() -> Result<()> {
             days,
             refresh_master,
         } => {
-            let results = cmd::scan::run(&conn, &config, days, refresh_master).await?;
+            let api_key =
+                config::AppConfig::require_key(&config.api.jquants_api_key, "JQUANTS_API_KEY")?;
+            let stock_api = jquants::JQuantsClient::new(api_key);
+            let results =
+                cmd::scan::run(&conn, &config, &stock_api, days, refresh_master).await?;
             output::print_list_output(&results, cli.format);
         }
         Command::Fetch { tickers } => {

@@ -58,6 +58,7 @@ src/
 # Pipeline
 kabu discover                        # LLM stock discovery → watchlist
 kabu scan --days 60                  # Fetch prices + compute TA
+kabu scan --refresh-master --days 60 # Refresh stock master + scan
 kabu fetch                           # Gather info via Gemini
 kabu eval                            # LLM evaluation (Hunting + Farming)
 kabu execute --dry-run               # Execute trades (dry run)
@@ -83,7 +84,10 @@ kabu show trades                     # Trade history
 ## Automation (cron/launchd)
 
 ```sh
-# Morning: discover → scan → fetch → eval
+# Weekly: refresh stock master + full pipeline
+kabu discover && kabu scan --refresh-master --days 60 && kabu fetch && kabu eval
+
+# Daily: scan without master refresh + eval
 kabu discover && kabu scan --days 60 && kabu fetch && kabu eval
 
 # Market open: execute

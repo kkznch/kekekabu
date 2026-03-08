@@ -87,6 +87,32 @@ impl JQuantsClient {
         bail!("Rate limited after {} retries: {}", MAX_RETRIES, url)
     }
 
+    pub async fn get_all_stock_info(&self) -> Result<Vec<ListedInfo>> {
+        let url = format!("{BASE_URL}/equities/master");
+        let resp = self
+            .get_with_retry(&url)
+            .await
+            .context("Failed to request J-Quants equities/master (all)")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            bail!(
+                "J-Quants equities/master (all) failed ({}): {}",
+                status,
+                text
+            );
+        }
+
+        let data: EquitiesMasterResponse = resp
+            .json()
+            .await
+            .context("Failed to parse equities master response")?;
+
+        Ok(data.data)
+    }
+
+    #[allow(dead_code)] // Kept for potential future per-ticker lookups
     pub async fn get_stock_info(&self, code: &str) -> Result<Option<ListedInfo>> {
         let url = format!("{BASE_URL}/equities/master?code={}", code);
         let resp = self

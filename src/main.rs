@@ -36,6 +36,9 @@ enum Command {
         /// Number of days of historical data to fetch
         #[arg(long, default_value = "60")]
         days: u32,
+        /// Refresh the stock master data from J-Quants API before scanning
+        #[arg(long)]
+        refresh_master: bool,
     },
     /// Gather latest information for stocks via LLM (Gemini)
     Fetch {
@@ -164,8 +167,11 @@ async fn main() -> Result<()> {
             let result = cmd::discover::run(&conn, &config).await?;
             output::print_output(&result, cli.format);
         }
-        Command::Scan { days } => {
-            let results = cmd::scan::run(&conn, &config, days).await?;
+        Command::Scan {
+            days,
+            refresh_master,
+        } => {
+            let results = cmd::scan::run(&conn, &config, days, refresh_master).await?;
             output::print_list_output(&results, cli.format);
         }
         Command::Fetch { tickers } => {

@@ -231,7 +231,7 @@ path = "specs/my-strategy.toml"
 ```sh
 # 日次パイプライン
 kabu discover                        # LLM で有望銘柄を発掘・watchlist 更新
-kabu scan --days 60
+kabu scan --refresh-master --days 60  # 初回は --refresh-master 必須
 kabu fetch
 kabu eval
 kabu execute --dry-run
@@ -255,7 +255,10 @@ kabu show trades                    # 取引履歴
 ## 自動化（cron / launchd）
 
 ```sh
-# 朝: 銘柄発掘 → データ収集 → 評価
+# 週次: 銘柄マスター更新 + フルパイプライン
+kabu discover && kabu scan --refresh-master --days 60 && kabu fetch && kabu eval
+
+# 日次: 銘柄発掘 → データ収集 → 評価
 kabu discover && kabu scan --days 60 && kabu fetch && kabu eval
 
 # 市場オープン: 実行

@@ -68,6 +68,73 @@ pub async fn save_stock(
     .context("Failed to save stock")
 }
 
+pub async fn save_stocks_bulk(
+    conn: &Connection,
+    stocks: &[crate::jquants::ListedInfo],
+) -> Result<usize> {
+    let stocks: Vec<(String, String, Option<String>)> = stocks
+        .iter()
+        .map(|s| (s.code.clone(), s.company_name.clone(), s.sector.clone()))
+        .collect();
+    let count = stocks.len();
+
+    conn.call(move |conn| {
+        let tx = conn.transaction()?;
+        for (ticker, name, sector) in &stocks {
+            tx.execute(
+                "INSERT INTO stocks (ticker, name, market, sector)
+                 VALUES (?1, ?2, 'jp', ?3)
+                 ON CONFLICT(ticker) DO UPDATE SET
+                   name = excluded.name,
+                   sector = excluded.sector,
+                   updated_at = datetime('now')",
+                rusqlite::params![ticker, name, sector],
+            )?;
+        }
+        tx.commit()?;
+        Ok::<(), rusqlite::Error>(())
+    })
+    .await
+    .context("Failed to save stocks in bulk")?;
+
+    Ok(count)
+}
+
+pub async fn has_any_stocks(conn: &Connection) -> Result<bool> {
+    conn.call(|conn| {
+        let count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM stocks LIMIT 1", [], |row| row.get(0))?;
+        Ok::<bool, rusqlite::Error>(count > 0)
+    })
+    .await
+    .context("Failed to check stocks table")
+}
+
+pub struct StockRecord {
+    pub name: String,
+    pub sector: Option<String>,
+}
+
+pub async fn get_stock_info(conn: &Connection, stock_id: i64) -> Result<Option<StockRecord>> {
+    conn.call(move |conn| {
+        let result = conn
+            .query_row(
+                "SELECT name, sector FROM stocks WHERE id = ?1",
+                [stock_id],
+                |row| {
+                    Ok(StockRecord {
+                        name: row.get(0)?,
+                        sector: row.get(1)?,
+                    })
+                },
+            )
+            .ok();
+        Ok::<Option<StockRecord>, rusqlite::Error>(result)
+    })
+    .await
+    .context("Failed to get stock info")
+}
+
 pub async fn save_prices(
     conn: &Connection,
     stock_id: i64,

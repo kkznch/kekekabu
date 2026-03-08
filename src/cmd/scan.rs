@@ -18,13 +18,30 @@ pub struct ScanResult {
     pub indicators: Option<TechnicalIndicators>,
 }
 
-pub async fn run(conn: &Connection, config: &AppConfig, days: u32) -> Result<Vec<ScanResult>> {
+pub async fn run(
+    conn: &Connection,
+    config: &AppConfig,
+    days: u32,
+    refresh_master: bool,
+) -> Result<Vec<ScanResult>> {
     let api_key = AppConfig::require_key(&config.api.jquants_api_key, "JQUANTS_API_KEY")?;
     let client = JQuantsClient::new(api_key);
 
+    // Refresh master data if requested
+    if refresh_master {
+        info!("Refreshing stock master data from J-Quants API");
+        let all_stocks = client.get_all_stock_info().await?;
+        let count = db::save_stocks_bulk(conn, &all_stocks).await?;
+        info!(count, "Stock master data refreshed");
+    } else if !db::has_any_stocks(conn).await? {
+        anyhow::bail!(
+            "stocks テーブルが空です。先に kabu scan --refresh-master を実行してください"
+        );
+    }
+
     let watchlist = db::watchlist_list(conn).await?;
     if watchlist.is_empty() {
-        anyhow::bail!("Watchlist is empty. Add stocks with: kabu watchlist add <ticker>");
+        anyhow::bail!("Watchlist is empty. Run kabu discover first.");
     }
 
     let to_date = chrono::Local::now().format("%Y-%m-%d").to_string();
@@ -37,22 +54,23 @@ pub async fn run(conn: &Connection, config: &AppConfig, days: u32) -> Result<Vec
     let mut results = Vec::new();
 
     for (i, item) in watchlist.iter().enumerate() {
+        // Look up stock from DB (populated by --refresh-master)
+        let stock_id = match db::get_stock_id(conn, &item.ticker).await? {
+            Some(id) => id,
+            None => {
+                tracing::warn!(
+                    ticker = %item.ticker,
+                    "Stock not found in master data, skipping. Run kabu scan --refresh-master to update."
+                );
+                continue;
+            }
+        };
+
         if i > 0 {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         }
 
-        info!(ticker = %item.ticker, "Fetching data");
-
-        let stock_info = client.get_stock_info(&item.ticker).await?;
-        let name = stock_info
-            .as_ref()
-            .map(|i| i.company_name.as_str())
-            .unwrap_or(&item.ticker);
-        let sector = stock_info.as_ref().and_then(|i| i.sector.as_deref());
-
-        let stock_id = db::save_stock(conn, &item.ticker, name, sector).await?;
-
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        info!(ticker = %item.ticker, "Fetching daily quotes");
 
         match client
             .get_daily_quotes(&item.ticker, &from_date, &to_date)
@@ -83,10 +101,16 @@ pub async fn run(conn: &Connection, config: &AppConfig, days: u32) -> Result<Vec
             None
         };
 
+        // Get stock info from DB
+        let stock_info = db::get_stock_info(conn, stock_id).await?;
+
         results.push(ScanResult {
             ticker: item.ticker.clone(),
-            name: name.to_string(),
-            sector: sector.map(|s| s.to_string()),
+            name: stock_info
+                .as_ref()
+                .map(|s| s.name.clone())
+                .unwrap_or_else(|| item.ticker.clone()),
+            sector: stock_info.and_then(|s| s.sector),
             latest_close,
             data_points,
             indicators: ta,

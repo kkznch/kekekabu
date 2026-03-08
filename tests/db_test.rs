@@ -281,6 +281,75 @@ async fn test_list_stocks() -> Result<()> {
 }
 
 #[tokio::test]
+async fn test_save_stocks_bulk_empty() -> Result<()> {
+    let conn = setup_db().await?;
+    let count = kekekabu::db::save_stocks_bulk(&conn, &[]).await?;
+    assert_eq!(count, 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_save_stocks_bulk_multiple() -> Result<()> {
+    let conn = setup_db().await?;
+    let stocks = vec![
+        kekekabu::jquants::ListedInfo {
+            code: "7203".to_string(),
+            company_name: "Toyota Motor".to_string(),
+            sector: Some("Automobile".to_string()),
+        },
+        kekekabu::jquants::ListedInfo {
+            code: "6758".to_string(),
+            company_name: "Sony Group".to_string(),
+            sector: Some("Electronics".to_string()),
+        },
+    ];
+    let count = kekekabu::db::save_stocks_bulk(&conn, &stocks).await?;
+    assert_eq!(count, 2);
+
+    let all = kekekabu::db::list_stocks(&conn).await?;
+    assert_eq!(all.len(), 2);
+    assert_eq!(all[0].ticker, "6758");
+    assert_eq!(all[0].name, "Sony Group");
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_save_stocks_bulk_upsert() -> Result<()> {
+    let conn = setup_db().await?;
+    // Insert initial
+    kekekabu::db::save_stock(&conn, "7203", "Toyota", Some("Auto")).await?;
+
+    // Bulk upsert with updated name
+    let stocks = vec![kekekabu::jquants::ListedInfo {
+        code: "7203".to_string(),
+        company_name: "Toyota Motor Corporation".to_string(),
+        sector: Some("Automobile".to_string()),
+    }];
+    kekekabu::db::save_stocks_bulk(&conn, &stocks).await?;
+
+    let all = kekekabu::db::list_stocks(&conn).await?;
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].name, "Toyota Motor Corporation");
+    assert_eq!(all[0].sector.as_deref(), Some("Automobile"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_has_any_stocks_empty() -> Result<()> {
+    let conn = setup_db().await?;
+    assert!(!kekekabu::db::has_any_stocks(&conn).await?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_has_any_stocks_with_data() -> Result<()> {
+    let conn = setup_db().await?;
+    kekekabu::db::save_stock(&conn, "7203", "Toyota", None).await?;
+    assert!(kekekabu::db::has_any_stocks(&conn).await?);
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_recent_evaluations_by_stock_empty() -> Result<()> {
     let conn = setup_db().await?;
     let stock_id = kekekabu::db::save_stock(&conn, "7203", "Toyota", None).await?;

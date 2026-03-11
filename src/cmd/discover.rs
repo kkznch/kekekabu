@@ -87,8 +87,25 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
             "discover_stocks",
             "Discover stock candidates and return structured watchlist actions",
             discover_response_schema(),
+            None,
         )
         .await?;
+
+    if let Err(e) = db::save_llm_log(
+        conn,
+        "discover",
+        None,
+        &config.llm.fetch,
+        None,
+        None,
+        &prompt,
+        &response_text,
+    )
+    .await
+    {
+        warn!(error = %e, "Failed to save LLM log");
+    }
+
     let response = parse_discover_response(&response_text)?;
 
     // Get held tickers to protect from removal

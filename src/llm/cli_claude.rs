@@ -1,6 +1,7 @@
 use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
 use tokio::process::Command;
+use tracing::warn;
 
 use super::LlmBackend;
 
@@ -26,7 +27,15 @@ impl CliClaudeBackend {
 
 #[async_trait]
 impl LlmBackend for CliClaudeBackend {
-    async fn send_message(&self, prompt: &str, _max_tokens: u32) -> Result<String> {
+    async fn send_message(
+        &self,
+        prompt: &str,
+        _max_tokens: u32,
+        temperature: Option<f32>,
+    ) -> Result<String> {
+        if temperature.is_some() {
+            warn!("cli-claude does not support temperature parameter, ignoring");
+        }
         let mut cmd = Command::new("claude");
         cmd.arg("-p").arg(prompt);
 

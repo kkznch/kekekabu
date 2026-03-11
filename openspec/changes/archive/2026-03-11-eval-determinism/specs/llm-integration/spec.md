@@ -1,8 +1,4 @@
-## Purpose
-
-LLM バックエンド抽象化。4 バックエンド（api-anthropic, api-gemini, cli-claude, cli-gemini）の統一インターフェースを提供する。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: LLM バックエンドの抽象化
 システムは SHALL `LlmBackend` トレイトに `send_message(prompt, max_tokens, temperature)` メソッドを定義し、全バックエンドが実装する。`temperature` は `Option<f32>` 型とし、`None` の場合は API デフォルトを使用する。`send_message_with_schema` にも同様に `temperature` パラメータを追加する。
@@ -62,10 +58,3 @@ LLM バックエンド抽象化。4 バックエンド（api-anthropic, api-gemi
 #### Scenario: CLI 未インストール
 - **WHEN** `cli-gemini` が選択されているが `gemini` コマンドが PATH に見つからない場合
 - **THEN** gemini CLI がインストールされていない旨のエラーを返す
-
-### Requirement: モデルのオーバーライド
-システムは SHALL `fetch_model` / `eval_model` 設定で各バックエンドのデフォルトモデルを変更できる。
-
-#### Scenario: カスタムモデルの指定
-- **WHEN** `eval_model = "claude-opus-4-5-20250514"` が設定されている場合
-- **THEN** eval 時にデフォルトモデルの代わりに指定されたモデルを使用する

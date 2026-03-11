@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tokio_rusqlite::Connection;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::config::AppConfig;
 use crate::db;
@@ -71,7 +71,23 @@ pub async fn run(
 
         info!(ticker = %item.ticker, backend = %config.llm.fetch, "Fetching information");
 
-        let response_text = backend.send_message(&prompt, 8192).await?;
+        let response_text = backend.send_message(&prompt, 8192, None).await?;
+
+        if let Err(e) = db::save_llm_log(
+            conn,
+            "fetch",
+            Some(&item.ticker),
+            &config.llm.fetch,
+            None,
+            None,
+            &prompt,
+            &response_text,
+        )
+        .await
+        {
+            warn!(error = %e, "Failed to save LLM log");
+        }
+
         let items = parse_fetch_response(&response_text)?;
 
         let mut saved_count = 0;

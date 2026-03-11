@@ -628,6 +628,7 @@ pub async fn table_stats(conn: &Connection) -> Result<Vec<TableStat>> {
             "portfolio_positions",
             "trades",
             "watchlist_events",
+            "llm_logs",
         ];
         let mut stats = Vec::new();
         for table in tables {
@@ -709,4 +710,97 @@ pub async fn get_latest_evaluations_for_today(conn: &Connection) -> Result<Vec<E
     })
     .await
     .context("Failed to get today's evaluations")
+}
+
+// ─── LLM Logs ───────────────────────────────────────────────────────
+
+#[derive(Debug, serde::Serialize)]
+pub struct LlmLog {
+    pub id: i64,
+    pub command: String,
+    pub ticker: Option<String>,
+    pub backend: String,
+    pub model: Option<String>,
+    pub temperature: Option<f64>,
+    pub prompt: String,
+    pub response: String,
+    pub created_at: String,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn save_llm_log(
+    conn: &Connection,
+    command: &str,
+    ticker: Option<&str>,
+    backend: &str,
+    model: Option<&str>,
+    temperature: Option<f32>,
+    prompt: &str,
+    response: &str,
+) -> Result<()> {
+    let command = command.to_string();
+    let ticker = ticker.map(|s| s.to_string());
+    let backend = backend.to_string();
+    let model = model.map(|s| s.to_string());
+    let prompt = prompt.to_string();
+    let response = response.to_string();
+
+    conn.call(move |conn| {
+        conn.execute(
+            "INSERT INTO llm_logs (command, ticker, backend, model, temperature, prompt, response)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![command, ticker, backend, model, temperature, prompt, response],
+        )?;
+        Ok::<(), rusqlite::Error>(())
+    })
+    .await
+    .context("Failed to save LLM log")
+}
+
+pub async fn list_llm_logs(
+    conn: &Connection,
+    limit: i64,
+    ticker: Option<&str>,
+) -> Result<Vec<LlmLog>> {
+    let ticker = ticker.map(|s| s.to_string());
+
+    conn.call(move |conn| {
+        let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match &ticker {
+            Some(t) => (
+                "SELECT id, command, ticker, backend, model, temperature, prompt, response, created_at
+                 FROM llm_logs WHERE ticker = ?1 ORDER BY id DESC LIMIT ?2"
+                    .to_string(),
+                vec![
+                    Box::new(t.clone()) as Box<dyn rusqlite::types::ToSql>,
+                    Box::new(limit),
+                ],
+            ),
+            None => (
+                "SELECT id, command, ticker, backend, model, temperature, prompt, response, created_at
+                 FROM llm_logs ORDER BY id DESC LIMIT ?1"
+                    .to_string(),
+                vec![Box::new(limit) as Box<dyn rusqlite::types::ToSql>],
+            ),
+        };
+
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(params.iter()), |row| {
+                Ok(LlmLog {
+                    id: row.get(0)?,
+                    command: row.get(1)?,
+                    ticker: row.get(2)?,
+                    backend: row.get(3)?,
+                    model: row.get(4)?,
+                    temperature: row.get(5)?,
+                    prompt: row.get(6)?,
+                    response: row.get(7)?,
+                    created_at: row.get(8)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok::<Vec<LlmLog>, rusqlite::Error>(rows)
+    })
+    .await
+    .context("Failed to list LLM logs")
 }

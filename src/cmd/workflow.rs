@@ -351,7 +351,23 @@ async fn fetch_single_stock(
         .await?
         .ok_or_else(|| anyhow::anyhow!("Stock not found"))?;
     let prompt = fetch::build_fetch_prompt(ticker, name);
-    let response_text = backend.send_message(&prompt, 8192).await?;
+    let response_text = backend.send_message(&prompt, 8192, None).await?;
+
+    if let Err(e) = db::save_llm_log(
+        conn,
+        "fetch",
+        Some(ticker),
+        llm_backend_name,
+        None,
+        None,
+        &prompt,
+        &response_text,
+    )
+    .await
+    {
+        warn!(error = %e, "Failed to save LLM log");
+    }
+
     let items = fetch::parse_fetch_response(&response_text)?;
     for fi in &items {
         if let Err(e) = db::save_fetch_result(
@@ -478,8 +494,25 @@ async fn eval_single_stock_full(
             "eval_stock",
             "Evaluate a stock and return structured judgment",
             eval::eval_response_schema(),
+            Some(0.0),
         )
         .await?;
+
+    if let Err(e) = db::save_llm_log(
+        conn,
+        "eval",
+        Some(ticker),
+        llm_backend_name,
+        None,
+        Some(0.0),
+        &prompt,
+        &response_text,
+    )
+    .await
+    {
+        warn!(error = %e, "Failed to save LLM log");
+    }
+
     let eval_response = eval::parse_eval_response(&response_text)?;
 
     db::save_evaluation(

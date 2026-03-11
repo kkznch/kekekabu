@@ -15,7 +15,12 @@ pub use cli_gemini::CliGeminiBackend;
 
 #[async_trait]
 pub trait LlmBackend: Send + Sync {
-    async fn send_message(&self, prompt: &str, max_tokens: u32) -> Result<String>;
+    async fn send_message(
+        &self,
+        prompt: &str,
+        max_tokens: u32,
+        temperature: Option<f32>,
+    ) -> Result<String>;
 
     /// Send a message with a JSON schema for structured output.
     /// Backends that support structured output (e.g. Anthropic tool_use) override this.
@@ -27,8 +32,9 @@ pub trait LlmBackend: Send + Sync {
         _tool_name: &str,
         _tool_description: &str,
         _schema: serde_json::Value,
+        temperature: Option<f32>,
     ) -> Result<String> {
-        self.send_message(prompt, max_tokens).await
+        self.send_message(prompt, max_tokens, temperature).await
     }
 }
 

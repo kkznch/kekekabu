@@ -256,6 +256,25 @@ impl HumanDisplay for crate::cmd::workflow::WorkflowReport {
     }
 }
 
+impl HumanDisplay for crate::db::LlmLog {
+    fn print_human(&self) {
+        let ticker = self.ticker.as_deref().unwrap_or("-");
+        let temp = self
+            .temperature
+            .map(|t| format!("{:.1}", t))
+            .unwrap_or_else(|| "-".to_string());
+        println!(
+            "[{}] {} cmd:{} ticker:{} backend:{} temp:{}",
+            self.id, &self.created_at[..19], self.command, ticker, self.backend, temp
+        );
+        // Truncate prompt/response for human display
+        let prompt_preview: String = self.prompt.chars().take(80).collect();
+        let response_preview: String = self.response.chars().take(80).collect();
+        println!("  prompt:   {}...", prompt_preview);
+        println!("  response: {}...", response_preview);
+    }
+}
+
 fn step_label(status: &crate::cmd::workflow::StepStatus) -> &str {
     use crate::cmd::workflow::StepStatus;
     match status {

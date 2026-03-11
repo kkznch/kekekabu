@@ -18,6 +18,8 @@ struct MessageRequest {
     max_tokens: u32,
     messages: Vec<ChatMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<Vec<Tool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_choice: Option<ToolChoice>,
@@ -100,7 +102,12 @@ impl ApiAnthropicBackend {
 
 #[async_trait]
 impl LlmBackend for ApiAnthropicBackend {
-    async fn send_message(&self, prompt: &str, max_tokens: u32) -> Result<String> {
+    async fn send_message(
+        &self,
+        prompt: &str,
+        max_tokens: u32,
+        temperature: Option<f32>,
+    ) -> Result<String> {
         let req = MessageRequest {
             model: self.model.clone(),
             max_tokens,
@@ -108,6 +115,7 @@ impl LlmBackend for ApiAnthropicBackend {
                 role: "user".to_string(),
                 content: prompt.to_string(),
             }],
+            temperature,
             tools: None,
             tool_choice: None,
         };
@@ -138,6 +146,7 @@ impl LlmBackend for ApiAnthropicBackend {
         tool_name: &str,
         tool_description: &str,
         schema: serde_json::Value,
+        temperature: Option<f32>,
     ) -> Result<String> {
         let req = MessageRequest {
             model: self.model.clone(),
@@ -146,6 +155,7 @@ impl LlmBackend for ApiAnthropicBackend {
                 role: "user".to_string(),
                 content: prompt.to_string(),
             }],
+            temperature,
             tools: Some(vec![Tool {
                 name: tool_name.to_string(),
                 description: tool_description.to_string(),
@@ -204,6 +214,40 @@ mod tests {
             }
             _ => panic!("Expected ToolUse block"),
         }
+    }
+
+    #[test]
+    fn test_message_request_temperature_included() {
+        let req = MessageRequest {
+            model: "claude-sonnet-4-5-20250514".to_string(),
+            max_tokens: 1024,
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: "hello".to_string(),
+            }],
+            temperature: Some(0.0),
+            tools: None,
+            tool_choice: None,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("\"temperature\":0.0"));
+    }
+
+    #[test]
+    fn test_message_request_temperature_omitted() {
+        let req = MessageRequest {
+            model: "claude-sonnet-4-5-20250514".to_string(),
+            max_tokens: 1024,
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: "hello".to_string(),
+            }],
+            temperature: None,
+            tools: None,
+            tool_choice: None,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(!json.contains("temperature"));
     }
 
     #[test]

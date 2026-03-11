@@ -117,6 +117,15 @@ enum ShowCommand {
         #[arg(long, default_value = "20")]
         limit: i64,
     },
+    /// LLM prompt/response logs
+    LlmLogs {
+        /// Number of logs to show
+        #[arg(long, default_value = "20")]
+        limit: i64,
+        /// Filter by ticker
+        #[arg(long)]
+        ticker: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -198,6 +207,9 @@ async fn main() -> Result<()> {
             ShowCommand::Tables => cmd::show::tables(&conn, format).await?,
             ShowCommand::Summary => cmd::show::summary(&conn, format).await?,
             ShowCommand::Trades { limit } => cmd::show::trades(&conn, limit, format).await?,
+            ShowCommand::LlmLogs { limit, ticker } => {
+                cmd::show::llm_logs(&conn, limit, ticker.as_deref(), format).await?
+            }
         }
         return Ok(());
     }

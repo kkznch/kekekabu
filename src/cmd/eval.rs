@@ -9,6 +9,7 @@ use crate::indicators;
 use crate::llm;
 use crate::portfolio;
 use crate::spec;
+use tracing::warn;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EvalResponse {
@@ -184,8 +185,25 @@ pub async fn run(
                 "eval_stock",
                 "Evaluate a stock and return structured judgment",
                 eval_response_schema(),
+                Some(0.0),
             )
             .await?;
+
+        if let Err(e) = db::save_llm_log(
+            conn,
+            "eval",
+            Some(&target.ticker),
+            &config.llm.eval,
+            None,
+            Some(0.0),
+            &prompt,
+            &response_text,
+        )
+        .await
+        {
+            warn!(error = %e, "Failed to save LLM log");
+        }
+
         let eval_response = parse_eval_response(&response_text)?;
 
         db::save_evaluation(

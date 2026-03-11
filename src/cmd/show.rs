@@ -52,3 +52,14 @@ pub async fn trades(conn: &Connection, limit: i64, format: OutputFormat) -> Resu
     output::print_list_output(&trades, format);
     Ok(())
 }
+
+pub async fn llm_logs(
+    conn: &Connection,
+    limit: i64,
+    ticker: Option<&str>,
+    format: OutputFormat,
+) -> Result<()> {
+    let logs = db::list_llm_logs(conn, limit, ticker).await?;
+    output::print_list_output(&logs, format);
+    Ok(())
+}

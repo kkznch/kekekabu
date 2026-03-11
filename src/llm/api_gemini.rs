@@ -33,6 +33,8 @@ struct Part {
 #[serde(rename_all = "camelCase")]
 struct GenerationConfig {
     max_output_tokens: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
 }
 
 #[derive(Deserialize)]
@@ -67,7 +69,12 @@ impl ApiGeminiBackend {
 
 #[async_trait]
 impl LlmBackend for ApiGeminiBackend {
-    async fn send_message(&self, prompt: &str, max_tokens: u32) -> Result<String> {
+    async fn send_message(
+        &self,
+        prompt: &str,
+        max_tokens: u32,
+        temperature: Option<f32>,
+    ) -> Result<String> {
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
             self.model, self.api_key
@@ -81,6 +88,7 @@ impl LlmBackend for ApiGeminiBackend {
             }],
             generation_config: GenerationConfig {
                 max_output_tokens: max_tokens,
+                temperature,
             },
         };
 

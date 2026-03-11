@@ -442,12 +442,83 @@ async fn test_table_stats() -> Result<()> {
     kekekabu::db::watchlist_add(&conn, "7203", None).await?;
 
     let stats = kekekabu::db::table_stats(&conn).await?;
-    assert_eq!(stats.len(), 8);
+    assert_eq!(stats.len(), 9);
 
     let stocks_stat = stats.iter().find(|s| s.table_name == "stocks").unwrap();
     assert_eq!(stocks_stat.row_count, 1);
 
     let watchlist_stat = stats.iter().find(|s| s.table_name == "watchlist").unwrap();
     assert_eq!(watchlist_stat.row_count, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_save_and_list_llm_logs() -> Result<()> {
+    let conn = setup_db().await?;
+
+    kekekabu::db::save_llm_log(
+        &conn,
+        "eval",
+        Some("7203"),
+        "api-anthropic",
+        None,
+        Some(0.0),
+        "Evaluate this stock",
+        r#"{"decision": "Buy"}"#,
+    )
+    .await?;
+
+    kekekabu::db::save_llm_log(
+        &conn,
+        "fetch",
+        Some("6758"),
+        "cli-gemini",
+        None,
+        None,
+        "Fetch news",
+        r#"{"items": []}"#,
+    )
+    .await?;
+
+    let all_logs = kekekabu::db::list_llm_logs(&conn, 10, None).await?;
+    assert_eq!(all_logs.len(), 2);
+    // Most recent first
+    assert_eq!(all_logs[0].command, "fetch");
+    assert_eq!(all_logs[1].command, "eval");
+
+    // Filter by ticker
+    let toyota_logs = kekekabu::db::list_llm_logs(&conn, 10, Some("7203")).await?;
+    assert_eq!(toyota_logs.len(), 1);
+    assert_eq!(toyota_logs[0].ticker.as_deref(), Some("7203"));
+    assert_eq!(toyota_logs[0].temperature, Some(0.0));
+
+    // Limit
+    let limited = kekekabu::db::list_llm_logs(&conn, 1, None).await?;
+    assert_eq!(limited.len(), 1);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_save_llm_log_without_ticker() -> Result<()> {
+    let conn = setup_db().await?;
+
+    kekekabu::db::save_llm_log(
+        &conn,
+        "discover",
+        None,
+        "api-anthropic",
+        None,
+        None,
+        "Discover stocks",
+        r#"{"add": [], "remove": [], "keep": []}"#,
+    )
+    .await?;
+
+    let logs = kekekabu::db::list_llm_logs(&conn, 10, None).await?;
+    assert_eq!(logs.len(), 1);
+    assert_eq!(logs[0].command, "discover");
+    assert!(logs[0].ticker.is_none());
+    assert!(logs[0].temperature.is_none());
     Ok(())
 }

@@ -104,6 +104,20 @@ CREATE TABLE IF NOT EXISTS watchlist_events (
 );
 ";
 
+pub const CREATE_LLM_LOGS_TABLE: &str = "
+CREATE TABLE IF NOT EXISTS llm_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    command TEXT NOT NULL,
+    ticker TEXT,
+    backend TEXT NOT NULL,
+    model TEXT,
+    temperature REAL,
+    prompt TEXT NOT NULL,
+    response TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+";
+
 pub const ALL_SCHEMAS: &[&str] = &[
     CREATE_STOCKS_TABLE,
     CREATE_PRICES_TABLE,
@@ -113,4 +127,5 @@ pub const ALL_SCHEMAS: &[&str] = &[
     CREATE_PORTFOLIO_POSITIONS_TABLE,
     CREATE_TRADES_TABLE,
     CREATE_WATCHLIST_EVENTS_TABLE,
+    CREATE_LLM_LOGS_TABLE,
 ];

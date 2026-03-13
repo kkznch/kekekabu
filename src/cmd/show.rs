@@ -63,3 +63,14 @@ pub async fn llm_logs(
     output::print_list_output(&logs, format);
     Ok(())
 }
+
+pub async fn orders(
+    conn: &Connection,
+    limit: i64,
+    status: Option<&str>,
+    format: OutputFormat,
+) -> Result<()> {
+    let orders = db::list_orders(conn, limit, status).await?;
+    output::print_list_output(&orders, format);
+    Ok(())
+}

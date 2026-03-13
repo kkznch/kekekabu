@@ -442,7 +442,7 @@ async fn test_table_stats() -> Result<()> {
     kekekabu::db::watchlist_add(&conn, "7203", None).await?;
 
     let stats = kekekabu::db::table_stats(&conn).await?;
-    assert_eq!(stats.len(), 9);
+    assert_eq!(stats.len(), 10);
 
     let stocks_stat = stats.iter().find(|s| s.table_name == "stocks").unwrap();
     assert_eq!(stocks_stat.row_count, 1);
@@ -520,5 +520,145 @@ async fn test_save_llm_log_without_ticker() -> Result<()> {
     assert_eq!(logs[0].command, "discover");
     assert!(logs[0].ticker.is_none());
     assert!(logs[0].temperature.is_none());
+    Ok(())
+}
+
+// ─── Orders tests ────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_order_save_and_list() -> Result<()> {
+    let conn = setup_db().await?;
+    let stock_id = kekekabu::db::save_stock(&conn, "7203", "Toyota", None).await?;
+
+    let eval_id =
+        kekekabu::db::save_evaluation(&conn, stock_id, "Buy", 75, "Good", None, None, None).await?;
+
+    let order_id = kekekabu::db::save_order(
+        &conn,
+        stock_id,
+        "buy",
+        "limit",
+        "2500",
+        "100",
+        "2026-03-13-7203-buy-1",
+        Some(eval_id),
+    )
+    .await?;
+    assert!(order_id > 0);
+
+    let orders = kekekabu::db::list_orders(&conn, 10, None).await?;
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[0].ticker, "7203");
+    assert_eq!(orders[0].side, "buy");
+    assert_eq!(orders[0].price, "2500");
+    assert_eq!(orders[0].quantity, "100");
+    assert_eq!(orders[0].status, "pending");
+    assert_eq!(orders[0].evaluation_id, Some(eval_id));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_order_update_status() -> Result<()> {
+    let conn = setup_db().await?;
+    let stock_id = kekekabu::db::save_stock(&conn, "7203", "Toyota", None).await?;
+
+    let order_id = kekekabu::db::save_order(
+        &conn, stock_id, "buy", "limit", "2500", "100", "req-1", None,
+    )
+    .await?;
+
+    kekekabu::db::update_order_status(
+        &conn,
+        order_id,
+        "filled",
+        Some("T12345"),
+        Some("2500"),
+        Some("100"),
+        Some("2026-03-13 10:00:00"),
+    )
+    .await?;
+
+    let orders = kekekabu::db::list_orders(&conn, 10, Some("filled")).await?;
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[0].status, "filled");
+    assert_eq!(orders[0].tachibana_order_id.as_deref(), Some("T12345"));
+    assert_eq!(orders[0].filled_price.as_deref(), Some("2500"));
+    assert_eq!(orders[0].filled_quantity.as_deref(), Some("100"));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_order_list_pending() -> Result<()> {
+    let conn = setup_db().await?;
+    let stock_id = kekekabu::db::save_stock(&conn, "7203", "Toyota", None).await?;
+
+    let id1 = kekekabu::db::save_order(
+        &conn, stock_id, "buy", "limit", "2500", "100", "req-1", None,
+    )
+    .await?;
+    kekekabu::db::save_order(
+        &conn, stock_id, "sell", "limit", "2600", "50", "req-2", None,
+    )
+    .await?;
+
+    // Fill one
+    kekekabu::db::update_order_status(&conn, id1, "filled", None, None, None, None).await?;
+
+    let pending = kekekabu::db::list_pending_orders(&conn).await?;
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].side, "sell");
+    assert_eq!(pending[0].request_id, "req-2");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_order_request_id_idempotent() -> Result<()> {
+    let conn = setup_db().await?;
+    let stock_id = kekekabu::db::save_stock(&conn, "7203", "Toyota", None).await?;
+
+    let id1 = kekekabu::db::save_order(
+        &conn, stock_id, "buy", "limit", "2500", "100", "req-dup", None,
+    )
+    .await?;
+    let id2 = kekekabu::db::save_order(
+        &conn, stock_id, "buy", "limit", "2500", "100", "req-dup", None,
+    )
+    .await?;
+
+    assert_eq!(id1, id2, "Duplicate request_id should return same order id");
+
+    let orders = kekekabu::db::list_orders(&conn, 10, None).await?;
+    assert_eq!(orders.len(), 1);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_order_exists_for_evaluation() -> Result<()> {
+    let conn = setup_db().await?;
+    let stock_id = kekekabu::db::save_stock(&conn, "7203", "Toyota", None).await?;
+    let eval_id =
+        kekekabu::db::save_evaluation(&conn, stock_id, "Buy", 75, "Good", None, None, None).await?;
+
+    assert!(!kekekabu::db::order_exists_for_evaluation(&conn, eval_id, "buy").await?);
+
+    kekekabu::db::save_order(
+        &conn,
+        stock_id,
+        "buy",
+        "limit",
+        "2500",
+        "100",
+        "req-eval",
+        Some(eval_id),
+    )
+    .await?;
+
+    assert!(kekekabu::db::order_exists_for_evaluation(&conn, eval_id, "buy").await?);
+    assert!(!kekekabu::db::order_exists_for_evaluation(&conn, eval_id, "sell").await?);
+
     Ok(())
 }

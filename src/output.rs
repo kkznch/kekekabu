@@ -131,11 +131,66 @@ impl HumanDisplay for crate::cmd::execute::ExecuteResult {
             }
             return;
         }
+        if !self.settle_results.is_empty() {
+            println!("=== Settle ===");
+            for s in &self.settle_results {
+                println!(
+                    "  {} #{}: {} -> {} {}",
+                    s.ticker,
+                    s.order_id,
+                    s.old_status,
+                    s.new_status,
+                    s.filled_price.as_deref().unwrap_or("")
+                );
+            }
+            println!();
+        }
         if self.actions.is_empty() {
             println!("No actions to execute.");
         }
         for a in &self.actions {
             println!("[{}] {} ({}) - {}", a.action, a.ticker, a.name, a.detail);
+        }
+        if !self.order_results.is_empty() {
+            println!("\n=== Orders ===");
+            for o in &self.order_results {
+                println!(
+                    "  {} {} {} x {} @ {} [{}]",
+                    o.ticker,
+                    o.side,
+                    o.quantity,
+                    o.price,
+                    o.tachibana_order_id.as_deref().unwrap_or("-"),
+                    o.status
+                );
+            }
+        }
+    }
+}
+
+impl HumanDisplay for crate::db::Order {
+    fn print_human(&self) {
+        let eval_id = self
+            .evaluation_id
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        println!(
+            "[{}] {:<10} {:<5} {}x{} tachibana:{} eval:{}",
+            self.status,
+            self.ticker,
+            self.side,
+            self.quantity,
+            self.price,
+            self.tachibana_order_id.as_deref().unwrap_or("-"),
+            eval_id,
+        );
+        if let Some(ref fp) = self.filled_price {
+            println!(
+                "  filled: {} x {} at {}",
+                self.filled_quantity.as_deref().unwrap_or("-"),
+                fp,
+                self.filled_at.as_deref().unwrap_or("-")
+            );
         }
     }
 }
@@ -265,7 +320,12 @@ impl HumanDisplay for crate::db::LlmLog {
             .unwrap_or_else(|| "-".to_string());
         println!(
             "[{}] {} cmd:{} ticker:{} backend:{} temp:{}",
-            self.id, &self.created_at[..19], self.command, ticker, self.backend, temp
+            self.id,
+            &self.created_at[..19],
+            self.command,
+            ticker,
+            self.backend,
+            temp
         );
         // Truncate prompt/response for human display
         let prompt_preview: String = self.prompt.chars().take(80).collect();

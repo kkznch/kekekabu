@@ -10,7 +10,7 @@ pub fn init(force: bool) -> Result<()> {
 pub fn validate() -> Result<()> {
     let use_color = std::io::IsTerminal::is_terminal(&std::io::stderr());
     let mut passed = 0;
-    let total = 2;
+    let total = 3;
 
     let config = config::AppConfig::load()?;
     eprintln!("{} Config", ok_mark(use_color));
@@ -28,6 +28,32 @@ pub fn validate() -> Result<()> {
         }
     }
 
+    // Tachibana config check (optional — only required for execute non-dry-run)
+    match &config.tachibana {
+        Some(tc) => {
+            let missing = tc.missing_fields();
+            if missing.is_empty() {
+                eprintln!("{} Tachibana", ok_mark(use_color));
+                passed += 1;
+            } else {
+                eprintln!(
+                    "{} Tachibana \u{2014} missing: {}",
+                    warn_mark(use_color),
+                    missing.join(", ")
+                );
+                eprintln!("  (required for `kabu execute` without --dry-run)");
+                passed += 1; // warn, not fail — it's optional
+            }
+        }
+        None => {
+            eprintln!(
+                "{} Tachibana \u{2014} not configured (optional, needed for `kabu execute`)",
+                warn_mark(use_color),
+            );
+            passed += 1;
+        }
+    }
+
     eprintln!("\n{}/{} checks passed.", passed, total);
     Ok(())
 }
@@ -37,6 +63,14 @@ fn ok_mark(color: bool) -> &'static str {
         "\x1b[32m\u{2713}\x1b[0m"
     } else {
         "\u{2713}"
+    }
+}
+
+fn warn_mark(color: bool) -> &'static str {
+    if color {
+        "\x1b[33m\u{26a0}\x1b[0m"
+    } else {
+        "\u{26a0}"
     }
 }
 

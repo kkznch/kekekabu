@@ -250,8 +250,14 @@ async fn step_fetch(
         if !matches!(report.stocks[i].scan, StepStatus::Success) {
             continue;
         }
-        let result =
-            fetch_single_stock(conn, &backend, &item.ticker, &item.name, &config.llm.fetch).await;
+        let result = fetch_single_stock(
+            conn,
+            backend.as_ref(),
+            &item.ticker,
+            &item.name,
+            &config.llm.fetch,
+        )
+        .await;
         report.apply_result(i, "fetch", &item.ticker, result);
     }
     Ok(())
@@ -298,7 +304,7 @@ async fn step_eval(
         }
         let result = eval_single_stock_full(
             conn,
-            &backend,
+            backend.as_ref(),
             &item.ticker,
             &item.name,
             &held_tickers,
@@ -342,7 +348,7 @@ async fn scan_single_stock(
 
 async fn fetch_single_stock(
     conn: &Connection,
-    backend: &Box<dyn llm::LlmBackend>,
+    backend: &dyn llm::LlmBackend,
     ticker: &str,
     name: &str,
     llm_backend_name: &str,
@@ -392,7 +398,7 @@ async fn fetch_single_stock(
 #[allow(clippy::too_many_arguments)]
 async fn eval_single_stock_full(
     conn: &Connection,
-    backend: &Box<dyn llm::LlmBackend>,
+    backend: &dyn llm::LlmBackend,
     ticker: &str,
     name: &str,
     held_tickers: &std::collections::HashSet<String>,
@@ -463,16 +469,17 @@ async fn eval_single_stock_full(
         "NewTarget"
     };
 
-    let position_info = positions.iter().find(|p| p.ticker == ticker).map(|p| {
-        PositionInfo {
+    let position_info = positions
+        .iter()
+        .find(|p| p.ticker == ticker)
+        .map(|p| PositionInfo {
             quantity: p.quantity.to_string(),
             avg_cost: p.avg_cost.to_string(),
             unrealized_pnl_pct: p
                 .unrealized_pnl_pct
                 .map(|v| format!("{:.1}%", v))
                 .unwrap_or_else(|| "N/A".to_string()),
-        }
-    });
+        });
 
     let prompt = eval::build_eval_prompt(
         ticker,

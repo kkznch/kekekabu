@@ -8,3 +8,4 @@ pub mod llm;
 pub mod output;
 pub mod portfolio;
 pub mod spec;
+pub mod tachibana;

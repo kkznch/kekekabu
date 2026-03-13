@@ -114,7 +114,12 @@ async fn test_scan_empty_watchlist_errors() -> Result<()> {
     let result = kekekabu::cmd::scan::run(&conn, &config, &api, 60, false).await;
 
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("Watchlist is empty"));
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("Watchlist is empty")
+    );
 
     Ok(())
 }

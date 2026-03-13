@@ -56,8 +56,7 @@ impl ServiceRuntime for RealRuntime {
     }
 
     fn remove_file(&self, path: &Path) -> Result<()> {
-        std::fs::remove_file(path)
-            .with_context(|| format!("Failed to remove {}", path.display()))
+        std::fs::remove_file(path).with_context(|| format!("Failed to remove {}", path.display()))
     }
 
     fn create_dir_all(&self, path: &Path) -> Result<()> {
@@ -294,16 +293,12 @@ mod tests {
         }
 
         fn remove_file(&self, path: &Path) -> Result<()> {
-            self.removed_files
-                .borrow_mut()
-                .push(path.to_path_buf());
+            self.removed_files.borrow_mut().push(path.to_path_buf());
             Ok(())
         }
 
         fn create_dir_all(&self, path: &Path) -> Result<()> {
-            self.created_dirs
-                .borrow_mut()
-                .push(path.to_path_buf());
+            self.created_dirs.borrow_mut().push(path.to_path_buf());
             Ok(())
         }
 
@@ -369,8 +364,7 @@ mod tests {
 
     #[test]
     fn test_install_writes_plist_via_runtime() {
-        let rt = MockRuntime::new("/usr/local/bin/kabu")
-            .with_command_output("501\n", true);
+        let rt = MockRuntime::new("/usr/local/bin/kabu").with_command_output("501\n", true);
         install(&rt).unwrap();
 
         let written = rt.written_files.borrow();
@@ -385,8 +379,8 @@ mod tests {
         let plist = plist_path().unwrap();
         let rt = MockRuntime::new("/usr/local/bin/kabu")
             .with_existing_file(&plist.to_string_lossy())
-            .with_command_output("501\n", true)  // uid
-            .with_command_output("", true);       // bootout
+            .with_command_output("501\n", true) // uid
+            .with_command_output("", true); // bootout
         uninstall(&rt).unwrap();
 
         let removed = rt.removed_files.borrow();

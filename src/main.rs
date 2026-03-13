@@ -8,6 +8,7 @@ mod llm;
 mod output;
 mod portfolio;
 mod spec;
+mod tachibana;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -126,6 +127,15 @@ enum ShowCommand {
         #[arg(long)]
         ticker: Option<String>,
     },
+    /// Order history
+    Orders {
+        /// Number of orders to show
+        #[arg(long, default_value = "20")]
+        limit: i64,
+        /// Filter by status (pending, filled, expired, rejected, cancelled)
+        #[arg(long)]
+        status: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -210,6 +220,9 @@ async fn main() -> Result<()> {
             ShowCommand::LlmLogs { limit, ticker } => {
                 cmd::show::llm_logs(&conn, limit, ticker.as_deref(), format).await?
             }
+            ShowCommand::Orders { limit, status } => {
+                cmd::show::orders(&conn, limit, status.as_deref(), format).await?
+            }
         }
         return Ok(());
     }
@@ -220,13 +233,10 @@ async fn main() -> Result<()> {
     if let Command::Workflow(sub) = cli.command {
         match sub {
             WorkflowCommand::Run { skip } => {
-                let api_key = config::AppConfig::require_key(
-                    &config.api.jquants_api_key,
-                    "JQUANTS_API_KEY",
-                )?;
+                let api_key =
+                    config::AppConfig::require_key(&config.api.jquants_api_key, "JQUANTS_API_KEY")?;
                 let stock_api = jquants::JQuantsClient::new(api_key);
-                let report =
-                    cmd::workflow::run(&conn, &config, &stock_api, &skip).await?;
+                let report = cmd::workflow::run(&conn, &config, &stock_api, &skip).await?;
                 output::print_output(&report, cli.format);
             }
         }
@@ -234,10 +244,7 @@ async fn main() -> Result<()> {
     }
 
     match cli.command {
-        Command::Config(_)
-        | Command::Show(_)
-        | Command::Service(_)
-        | Command::Workflow(_) => {
+        Command::Config(_) | Command::Show(_) | Command::Service(_) | Command::Workflow(_) => {
             unreachable!()
         }
         Command::Discover => {
@@ -251,8 +258,7 @@ async fn main() -> Result<()> {
             let api_key =
                 config::AppConfig::require_key(&config.api.jquants_api_key, "JQUANTS_API_KEY")?;
             let stock_api = jquants::JQuantsClient::new(api_key);
-            let results =
-                cmd::scan::run(&conn, &config, &stock_api, days, refresh_master).await?;
+            let results = cmd::scan::run(&conn, &config, &stock_api, days, refresh_master).await?;
             output::print_list_output(&results, cli.format);
         }
         Command::Fetch { tickers } => {

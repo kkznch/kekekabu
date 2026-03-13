@@ -56,5 +56,11 @@ async-trait = "0.1"
 # Spec hashing
 sha2 = "0.10"
 
+# Tachibana API
+tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
+encoding_rs = "0.8"
+url = "2"
+futures-util = "0.3"
+
 [dev-dependencies]
 tempfile = "3"

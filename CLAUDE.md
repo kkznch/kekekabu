@@ -6,7 +6,7 @@ JP stock investment CLI tool (`kabu`). Rust 2024 edition.
 
 6-command pipeline: `discover → scan → fetch → eval → execute → report`
 
-All phases implemented. Tachibana Securities API integration is stubbed (pending API access).
+All phases implemented. Tachibana Securities API integration for real order execution.
 
 ## Architecture
 
@@ -22,8 +22,13 @@ src/
   circuit_breaker.rs Safety checks (abnormal price moves, market-wide crash)
   spec.rs            Investment Spec TOML loader + SHA256 hashing
   db/
-    mod.rs           SQLite operations (8 tables)
+    mod.rs           SQLite operations (10 tables)
     schema.rs        Table definitions
+  tachibana/
+    mod.rs           Tachibana Securities e-Shiten API client (auth, session)
+    request.rs       REQUEST I/F helpers (JSON, URL encode, p_no, Shift-JIS decode)
+    order.rs         Order builders (CLMKabuNewOrder, CLMOrderListDetail)
+    event.rs         EVENT I/F WebSocket (fill notifications)
   llm/
     mod.rs           LlmBackend trait + factory
     api_anthropic.rs Anthropic HTTP API
@@ -34,9 +39,9 @@ src/
     scan.rs          J-Quants fetch + TA indicators
     fetch.rs         Gemini info gathering (news, disclosure, sentiment)
     eval.rs          LLM investment evaluation (Hunting: Buy/Avoid, Farming: Hold/Sell) + history injection
-    execute.rs       Trade execution (circuit breaker + Buy/Sell signals)
+    execute.rs       Trade execution (settle + circuit breaker + orders via Tachibana API)
     report.rs        Markdown report generation
-    show.rs          DB viewer (watchlist, events, positions, evaluations, stocks, tables, summary, trades)
+    show.rs          DB viewer (watchlist, events, positions, evaluations, stocks, tables, summary, trades, orders)
     config.rs        Config init + validate handlers
 ```
 
@@ -51,6 +56,7 @@ src/
 - **Circuit breaker** — blocks execute on >30% individual stock moves or >50% market decline
 - **Eval history** — injects last 3 evaluations per stock into LLM prompt to prevent flip-flopping
 - **Watchlist auto-cleanup** — auto-removes stock from watchlist when position is fully sold
+- **Order idempotency** — `request_id` UNIQUE constraint prevents duplicate orders per evaluation
 
 ## Commands
 
@@ -62,6 +68,7 @@ kabu scan --refresh-master --days 60 # Refresh stock master + scan
 kabu fetch                           # Gather info via Gemini
 kabu eval                            # LLM evaluation (Hunting + Farming)
 kabu execute --dry-run               # Execute trades (dry run)
+kabu execute                         # Execute trades (real: Tachibana API)
 kabu report -o report.md             # Generate Markdown report
 
 # Workflow (single-process pipeline with per-stock error isolation)
@@ -84,6 +91,8 @@ kabu show stocks                     # Registered stocks
 kabu show tables                     # Table row counts
 kabu show summary                    # Portfolio summary
 kabu show trades                     # Trade history
+kabu show orders                     # Order history
+kabu show orders --status pending    # Filter by status
 
 # Service (macOS launchd)
 kabu service install                 # Generate + install launchd plist
@@ -140,7 +149,10 @@ path = "specs/jp-core-value-quality-v1.toml"
 
 Environment variables override config: `JQUANTS_API_KEY`, `ANTHROPIC_API_KEY`.
 
-## DB Tables (8)
+Tachibana config (`[tachibana]` section): `user_id`, `password`, `second_password`, `event_timeout_secs`.
+Env overrides: `TACHIBANA_USER_ID`, `TACHIBANA_PASSWORD`, `TACHIBANA_SECOND_PASSWORD`.
+
+## DB Tables (10)
 
 1. `stocks` — ticker master
 2. `prices` — daily OHLCV
@@ -150,3 +162,5 @@ Environment variables override config: `JQUANTS_API_KEY`, `ANTHROPIC_API_KEY`.
 6. `fetch_results` — gathered information
 7. `portfolio_positions` — active positions (weighted avg cost)
 8. `trades` — trade history (with P&L)
+9. `llm_logs` — LLM call logs (prompt, response, backend, model)
+10. `orders` — broker orders (Tachibana, with request_id idempotency)

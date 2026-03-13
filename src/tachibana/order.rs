@@ -1,0 +1,200 @@
+use anyhow::{Context, Result};
+
+use super::request::{self, json_str};
+
+/// Build CLMKabuNewOrder request JSON for a limit order.
+///
+/// - `side`: "buy" or "sell" → mapped to sOrderBaibaiKubun "3" (buy) or "1" (sell)
+/// - `ticker`: stock code e.g. "7203"
+/// - `price`: limit price as string e.g. "2500"
+/// - `quantity`: order quantity as string e.g. "100"
+pub fn build_new_order_json(
+    side: &str,
+    ticker: &str,
+    price: &str,
+    quantity: &str,
+) -> serde_json::Value {
+    let baibai_kubun = match side {
+        "sell" => "1",
+        _ => "3", // buy
+    };
+
+    serde_json::json!({
+        "sCLMID": "CLMKabuNewOrder",
+        "sIssueCode": ticker,
+        "sOrderSizyouC": "00",                    // 東証
+        "sOrderBaibaiKubun": baibai_kubun,
+        "sGenkinSinyouKubun": "0",                 // 現物
+        "sOrderCondition": "0",                    // 通常
+        "sOrderOrderPriceKubun": "2",              // 指値
+        "sOrderOrderPrice": price,
+        "sOrderOrderSuryou": quantity,
+        "sOrderOrderExpireDay": "0",               // 当日限り
+        "sGyousyaCode": "",
+        "sOrderTatebiType": "",
+        "sOrderTategyokuNumber": "",
+        "p_no": request::next_p_no(),
+        "p_sd_date": request::p_sd_date(),
+    })
+}
+
+/// Result of placing a new order.
+#[allow(dead_code)]
+pub struct NewOrderResult {
+    pub order_number: String,
+    pub result_text: String,
+}
+
+/// Parse CLMKabuNewOrder response.
+pub fn parse_new_order_response(body: &str) -> Result<NewOrderResult> {
+    let value = request::parse_response(body)?;
+    let order_number =
+        json_str(&value, "sOrderNumber").context("Missing sOrderNumber in new order response")?;
+    let result_text = json_str(&value, "sResultText").unwrap_or_default();
+
+    Ok(NewOrderResult {
+        order_number,
+        result_text,
+    })
+}
+
+/// Build CLMOrderListDetail request JSON to query order status.
+///
+/// - `order_number`: the tachibana order number
+/// - `eigyou_day`: business date in YYYYMMDD format (empty string = today)
+pub fn build_order_detail_json(order_number: &str, eigyou_day: &str) -> serde_json::Value {
+    serde_json::json!({
+        "sCLMID": "CLMOrderListDetail",
+        "sOrderNumber": order_number,
+        "sEigyouDay": eigyou_day,
+        "p_no": request::next_p_no(),
+        "p_sd_date": request::p_sd_date(),
+    })
+}
+
+/// Parsed order detail from CLMOrderListDetail.
+#[allow(dead_code)]
+pub struct OrderDetail {
+    pub order_number: String,
+    pub issue_code: String,
+    pub status_code: String,
+    pub baibai_kubun: String,
+    pub order_price: String,
+    pub order_quantity: String,
+    pub filled_price: Option<String>,
+    pub filled_quantity: Option<String>,
+}
+
+/// Map sOrderStatusCode to our internal order status.
+pub fn map_status_code(code: &str) -> &'static str {
+    match code {
+        "0" | "1" | "13" => "pending", // 受付未済, 未約定, 発注待ち
+        "9" => "partial",              // 一部約定
+        "10" => "filled",              // 全部約定
+        "2" => "rejected",             // 受付エラー
+        "7" => "cancelled",            // 取消完了
+        "12" | "19" => "expired",      // 全部失効, 繰越失効
+        _ => "pending",                // Unknown → keep as pending for re-check
+    }
+}
+
+/// Parse CLMOrderListDetail response.
+pub fn parse_order_detail_response(body: &str) -> Result<OrderDetail> {
+    let value = request::parse_response(body)?;
+
+    let order_number =
+        json_str(&value, "sOrderNumber").context("Missing sOrderNumber in order detail")?;
+    let issue_code = json_str(&value, "sIssueCode").unwrap_or_default();
+    let status_code = json_str(&value, "sOrderStatusCode").unwrap_or_default();
+    let baibai_kubun = json_str(&value, "sOrderBaibaiKubun").unwrap_or_default();
+    let order_price = json_str(&value, "sOrderOrderPrice").unwrap_or_default();
+    let order_quantity = json_str(&value, "sOrderOrderSuryou").unwrap_or_default();
+    let filled_price = json_str(&value, "sYakuzyouPrice");
+    let filled_quantity = json_str(&value, "sYakuzyouSuryou");
+
+    Ok(OrderDetail {
+        order_number,
+        issue_code,
+        status_code,
+        baibai_kubun,
+        order_price,
+        order_quantity,
+        filled_price,
+        filled_quantity,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_new_order_buy() {
+        let json = build_new_order_json("buy", "7203", "2500", "100");
+        assert_eq!(json["sCLMID"], "CLMKabuNewOrder");
+        assert_eq!(json["sIssueCode"], "7203");
+        assert_eq!(json["sOrderBaibaiKubun"], "3"); // buy
+        assert_eq!(json["sOrderOrderPriceKubun"], "2"); // limit
+        assert_eq!(json["sOrderOrderPrice"], "2500");
+        assert_eq!(json["sOrderOrderSuryou"], "100");
+    }
+
+    #[test]
+    fn test_build_new_order_sell() {
+        let json = build_new_order_json("sell", "6758", "15000", "200");
+        assert_eq!(json["sOrderBaibaiKubun"], "1"); // sell
+    }
+
+    #[test]
+    fn test_map_status_code() {
+        assert_eq!(map_status_code("0"), "pending");
+        assert_eq!(map_status_code("1"), "pending");
+        assert_eq!(map_status_code("9"), "partial");
+        assert_eq!(map_status_code("10"), "filled");
+        assert_eq!(map_status_code("2"), "rejected");
+        assert_eq!(map_status_code("7"), "cancelled");
+        assert_eq!(map_status_code("12"), "expired");
+        assert_eq!(map_status_code("19"), "expired");
+        assert_eq!(map_status_code("99"), "pending"); // unknown
+    }
+
+    #[test]
+    fn test_parse_new_order_response_success() {
+        let body =
+            r#"{"p_errno":"0","sResultCode":"0","sOrderNumber":"ORD001","sResultText":"OK"}"#;
+        let result = parse_new_order_response(body).unwrap();
+        assert_eq!(result.order_number, "ORD001");
+        assert_eq!(result.result_text, "OK");
+    }
+
+    #[test]
+    fn test_parse_new_order_response_error() {
+        let body = r#"{"p_errno":"0","sResultCode":"1","sResultText":"余力不足"}"#;
+        let result = parse_new_order_response(body);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_order_detail_response() {
+        let body = r#"{
+            "p_errno":"0","sResultCode":"0",
+            "sOrderNumber":"ORD001","sIssueCode":"7203",
+            "sOrderStatusCode":"10","sOrderBaibaiKubun":"3",
+            "sOrderOrderPrice":"2500","sOrderOrderSuryou":"100",
+            "sYakuzyouPrice":"2500","sYakuzyouSuryou":"100"
+        }"#;
+        let detail = parse_order_detail_response(body).unwrap();
+        assert_eq!(detail.order_number, "ORD001");
+        assert_eq!(detail.status_code, "10");
+        assert_eq!(detail.filled_price.as_deref(), Some("2500"));
+        assert_eq!(detail.filled_quantity.as_deref(), Some("100"));
+    }
+
+    #[test]
+    fn test_build_order_detail_json() {
+        let json = build_order_detail_json("ORD001", "20260313");
+        assert_eq!(json["sCLMID"], "CLMOrderListDetail");
+        assert_eq!(json["sOrderNumber"], "ORD001");
+        assert_eq!(json["sEigyouDay"], "20260313");
+    }
+}

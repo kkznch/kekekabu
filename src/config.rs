@@ -10,6 +10,39 @@ pub struct AppConfig {
     pub llm: LlmConfig,
     #[serde(default)]
     pub spec: SpecConfig,
+    #[serde(default)]
+    pub tachibana: Option<TachibanaConfig>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct TachibanaConfig {
+    pub user_id: Option<String>,
+    pub password: Option<String>,
+    pub second_password: Option<String>,
+    #[serde(default = "TachibanaConfig::default_event_timeout_secs")]
+    pub event_timeout_secs: u64,
+}
+
+impl TachibanaConfig {
+    fn default_event_timeout_secs() -> u64 {
+        30
+    }
+
+    /// Validate that all required credentials are present.
+    /// Returns a list of missing field names.
+    pub fn missing_fields(&self) -> Vec<&'static str> {
+        let mut missing = Vec::new();
+        if self.user_id.as_ref().is_none_or(|s| s.is_empty()) {
+            missing.push("user_id");
+        }
+        if self.password.as_ref().is_none_or(|s| s.is_empty()) {
+            missing.push("password");
+        }
+        if self.second_password.as_ref().is_none_or(|s| s.is_empty()) {
+            missing.push("second_password");
+        }
+        missing
+    }
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -130,6 +163,14 @@ eval = "cli-claude"
 [spec]
 # Investment spec file path (relative to config dir or absolute)
 path = "specs/template.toml"
+
+# [tachibana]
+# Tachibana Securities e-Shiten API (https://www.e-shiten.jp/api/)
+# Required for `kabu execute` (non dry-run mode)
+# user_id = ""
+# password = ""
+# second_password = ""
+# event_timeout_secs = 30
 "#;
 
 const SPEC_TEMPLATE: &str = r#"# Investment Spec: JP Core Value & Quality
@@ -258,6 +299,29 @@ impl AppConfig {
         }
         if let Some(v) = Self::env_non_empty("GEMINI_API_KEY") {
             self.api.gemini_api_key = Some(v);
+        }
+
+        // Tachibana env overrides
+        let has_tachibana_env = Self::env_non_empty("TACHIBANA_USER_ID").is_some()
+            || Self::env_non_empty("TACHIBANA_PASSWORD").is_some()
+            || Self::env_non_empty("TACHIBANA_SECOND_PASSWORD").is_some();
+
+        if has_tachibana_env {
+            let tc = self.tachibana.get_or_insert(TachibanaConfig {
+                user_id: None,
+                password: None,
+                second_password: None,
+                event_timeout_secs: TachibanaConfig::default_event_timeout_secs(),
+            });
+            if let Some(v) = Self::env_non_empty("TACHIBANA_USER_ID") {
+                tc.user_id = Some(v);
+            }
+            if let Some(v) = Self::env_non_empty("TACHIBANA_PASSWORD") {
+                tc.password = Some(v);
+            }
+            if let Some(v) = Self::env_non_empty("TACHIBANA_SECOND_PASSWORD") {
+                tc.second_password = Some(v);
+            }
         }
     }
 

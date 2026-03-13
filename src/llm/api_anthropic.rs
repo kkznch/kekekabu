@@ -54,9 +54,7 @@ struct MessageResponse {
 #[serde(tag = "type")]
 enum ContentBlock {
     #[serde(rename = "text")]
-    Text {
-        text: String,
-    },
+    Text { text: String },
     #[serde(rename = "tool_use")]
     ToolUse {
         #[allow(dead_code)]
@@ -172,8 +170,7 @@ impl LlmBackend for ApiAnthropicBackend {
         // Extract the tool_use input as JSON string
         for block in &msg.content {
             if let ContentBlock::ToolUse { input, .. } = block {
-                return Ok(serde_json::to_string(input)
-                    .context("Failed to serialize tool_use input")?);
+                return serde_json::to_string(input).context("Failed to serialize tool_use input");
             }
         }
 

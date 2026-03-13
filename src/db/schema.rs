@@ -118,6 +118,27 @@ CREATE TABLE IF NOT EXISTS llm_logs (
 );
 ";
 
+pub const CREATE_ORDERS_TABLE: &str = "
+CREATE TABLE IF NOT EXISTS orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    stock_id INTEGER NOT NULL REFERENCES stocks(id),
+    side TEXT NOT NULL CHECK(side IN ('buy', 'sell')),
+    order_type TEXT NOT NULL DEFAULT 'limit',
+    price TEXT NOT NULL,
+    quantity TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending', 'filled', 'partial', 'cancelled', 'expired', 'rejected')),
+    tachibana_order_id TEXT,
+    request_id TEXT NOT NULL UNIQUE,
+    filled_price TEXT,
+    filled_quantity TEXT,
+    filled_at TEXT,
+    evaluation_id INTEGER REFERENCES evaluations(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+";
+
 pub const ALL_SCHEMAS: &[&str] = &[
     CREATE_STOCKS_TABLE,
     CREATE_PRICES_TABLE,
@@ -128,4 +149,5 @@ pub const ALL_SCHEMAS: &[&str] = &[
     CREATE_TRADES_TABLE,
     CREATE_WATCHLIST_EVENTS_TABLE,
     CREATE_LLM_LOGS_TABLE,
+    CREATE_ORDERS_TABLE,
 ];

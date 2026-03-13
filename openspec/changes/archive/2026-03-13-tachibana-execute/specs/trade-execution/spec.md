@@ -1,53 +1,4 @@
-## Purpose
-
-評価結果に基づく売買シグナル出力。サーキットブレーカーで安全確認後に、decision とスコアから売買アクションを生成する。
-
-## Requirements
-
-### Requirement: 当日の評価結果を処理
-システムは SHALL 当日の evaluations を処理し、decision とスコアに基づいて売買シグナルを生成する。
-
-#### Scenario: 高スコア Buy の買いシグナル
-- **WHEN** evaluation の decision="Buy" かつ score >= 70 の場合
-- **THEN** 買いシグナルアクションを生成する
-
-#### Scenario: 低スコア Buy の買いシグナルスキップ
-- **WHEN** evaluation の decision="Buy" かつ score < 70 の場合
-- **THEN** "score too low" の説明付きで買いシグナルをスキップする
-
-#### Scenario: Sell の売りシグナル
-- **WHEN** evaluation の decision="Sell" の場合
-- **THEN** portfolio_positions を確認し、保有していれば売りシグナルを生成する。保有していなければスキップする
-
-#### Scenario: 強い Avoid の売りシグナル
-- **WHEN** evaluation の decision="Avoid" かつ score <= 30 の場合
-- **THEN** 既存ポジションの見直しを促す売りシグナルアクションを生成する
-
-#### Scenario: Hold アクション
-- **WHEN** evaluation の decision="Hold" または買い/売りの閾値を満たさない場合
-- **THEN** hold アクションを生成する
-
-### Requirement: ドライランのサポート
-システムは SHALL デフォルトでドライランモードとし、アクションに "[DRY RUN]" プレフィックスを付ける。dry-run でない場合は立花証券 API 経由で実注文を発注する。
-
-#### Scenario: ドライランモード
-- **WHEN** `kabu execute --dry-run` を実行した場合
-- **THEN** 立花証券 API に接続せず、"[DRY RUN]" プレフィックス付きでアクションを出力する
-
-#### Scenario: 実行モード
-- **WHEN** `kabu execute` を dry-run なしで実行した場合
-- **THEN** 立花証券 API に接続し、シグナルに基づいて実際の注文を発注する
-
-### Requirement: 処理前にサーキットブレーカーを確認
-システムは SHALL evaluations の処理前にサーキットブレーカーを確認する。
-
-#### Scenario: サーキットブレーカー発動
-- **WHEN** サーキットブレーカーが危険な市場状況を検知した場合
-- **THEN** `circuit_breaker_triggered: true` と理由一覧を返して execute を中止する
-
-#### Scenario: 当日の評価がない場合
-- **WHEN** 当日の evaluations が存在しない場合
-- **THEN** 空のアクションと情報ログメッセージを返す
+## ADDED Requirements
 
 ### Requirement: settle フェーズによる前回注文の約定確認
 システムは SHALL execute 冒頭で orders テーブルの pending 注文を立花証券 API で照会し、約定済みなら portfolio に記録する。
@@ -101,3 +52,16 @@
 #### Scenario: WebSocket 接続失敗
 - **WHEN** WebSocket 接続に失敗した場合
 - **THEN** 警告ログを出力し、約定待ちフェーズをスキップする（注文自体は有効）
+
+## MODIFIED Requirements
+
+### Requirement: ドライランのサポート
+システムは SHALL デフォルトでドライランモードとし、アクションに "[DRY RUN]" プレフィックスを付ける。dry-run でない場合は立花証券 API 経由で実注文を発注する。
+
+#### Scenario: ドライランモード
+- **WHEN** `kabu execute --dry-run` を実行した場合
+- **THEN** 立花証券 API に接続せず、"[DRY RUN]" プレフィックス付きでアクションを出力する
+
+#### Scenario: 実行モード
+- **WHEN** `kabu execute` を dry-run なしで実行した場合
+- **THEN** 立花証券 API に接続し、シグナルに基づいて実際の注文を発注する

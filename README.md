@@ -14,7 +14,7 @@ discover → scan → fetch → eval → execute → report
 | `scan` | J-Quants API から価格データを取得し、テクニカル指標（RSI, MACD, BB, SMA 等）を算出 |
 | `fetch` | LLM で最新ニュース・開示・センチメント等の情報を収集 |
 | `eval` | LLM で投資判断を生成。新規候補は Buy/Avoid、保有中は Hold/Sell |
-| `execute` | サーキットブレーカー確認後、売買シグナルを出力 |
+| `execute` | サーキットブレーカー確認後、立花証券 API 経由で売買を執行（`--dry-run` でシミュレーション） |
 | `report` | 評価結果を Markdown レポートとして出力 |
 
 ### 判断フロー
@@ -32,7 +32,7 @@ eval: 銘柄を評価し、売買判断を生成
     ├─ watchlist にある & 保有中 → ExistingHolding → Hold / Sell
     └─ watchlist にない & 保有中 → ExistingHolding → Hold / Sell
     ↓
-execute: サーキットブレーカー確認後、売買シグナルを出力
+execute: settle（前回未約定注文の確認） → サーキットブレーカー → 発注 → 約定待ち
     ↓
 report: 評価結果を Markdown レポートに出力
 ```
@@ -63,6 +63,7 @@ flowchart LR
         evaluations[(evaluations)]
         positions[(portfolio_positions)]
         trades[(trades)]
+        orders[(orders)]
     end
 
     discover -->|add/remove| watchlist
@@ -89,6 +90,8 @@ flowchart LR
     evaluations -.->|当日の判断| execute
     positions -.->|保有確認| execute
     prices -.->|CB判定| execute
+    execute -->|発注記録| orders
+    orders -.->|pending注文| execute
     execute -->|約定時| positions
     execute -->|約定記録| trades
     execute -->|売却時auto-remove| watchlist
@@ -108,7 +111,7 @@ flowchart LR
 | `scan` | W | - | J-Quants |
 | `fetch` | R/W | ✓ | - |
 | `eval` | R/W | ✓ | - |
-| `execute` | R | - | - |
+| `execute` | R/W | - | 立花証券 |
 | `report` | R | - | - |
 | `show` | R | - | - |
 | `config init` | - | - | - |
@@ -156,6 +159,17 @@ cargo run -- config validate
 | `eval_model` | (なし) | `eval` で使うモデル名の上書き |
 
 `cli-gemini` / `cli-claude` はそれぞれ `gemini` / `claude` CLI がインストールされている必要があります。
+
+### `[tachibana]` — 立花証券 API（execute 実行時に必要）
+
+| キー | 説明 | 必須 |
+|------|------|------|
+| `user_id` | e-支店ログインID | `execute`（非 dry-run）時 |
+| `password` | ログインパスワード | 同上 |
+| `second_password` | 第二パスワード | 同上 |
+| `event_timeout_secs` | WebSocket 約定待ちタイムアウト（秒、デフォルト 30） | いいえ |
+
+環境変数 `TACHIBANA_USER_ID`, `TACHIBANA_PASSWORD`, `TACHIBANA_SECOND_PASSWORD` でも設定可能です。
 
 ### `[spec]` — 投資戦略
 
@@ -254,6 +268,8 @@ kabu show stocks                    # 登録銘柄一覧
 kabu show tables                    # テーブル統計
 kabu show summary                   # ポートフォリオサマリー
 kabu show trades                    # 取引履歴
+kabu show orders                    # 注文履歴
+kabu show orders --status pending   # ステータス絞り込み
 ```
 
 出力はデフォルトで JSON（stdout）。`--format human` で人間向け表示に切り替え可能。
@@ -313,13 +329,15 @@ just --list         # タスク一覧
 - **DB**: SQLite（tokio-rusqlite, bundled）
 - **API**: J-Quants V2
 - **LLM**: Anthropic API / Gemini API / Claude CLI / Gemini CLI
+- **証券 API**: 立花証券 e-支店 API v4r8（REQUEST I/F + EVENT I/F WebSocket）
 - **テクニカル分析**: rust_ti（RSI, MACD, BB, SMA, EMA, ATR）
 - **金額精度**: rust_decimal（TEXT 保存）
 
 ## 安全機構
 
 - **サーキットブレーカー**: 個別銘柄 >30% 変動、またはウォッチリストの >50% が >5% 下落した場合に execute をブロック
-- **ドライラン**: `execute --dry-run` がデフォルト
+- **ドライラン**: `execute --dry-run` がデフォルト（`--dry-run` なしで立花 API 経由の実発注）
+- **注文べき等性**: `request_id`（日付+銘柄+売買方向+評価ID）の UNIQUE 制約で同一評価からの重複発注を防止
 - **投資 Spec**: TOML で戦略パラメータを外部管理、SHA256 ハッシュで評価時の Spec を追跡
 - **eval 履歴注入**: 直近3件の評価履歴を LLM プロンプトに注入し、売→再買のフリップフロップを抑制
 - **売却時 watchlist 自動除外**: ポジション全量売却時に watchlist から自動除外し、再評価ループを防止

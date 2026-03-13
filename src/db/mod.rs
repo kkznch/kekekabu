@@ -629,6 +629,7 @@ pub async fn table_stats(conn: &Connection) -> Result<Vec<TableStat>> {
             "trades",
             "watchlist_events",
             "llm_logs",
+            "orders",
         ];
         let mut stats = Vec::new();
         for table in tables {
@@ -749,7 +750,15 @@ pub async fn save_llm_log(
         conn.execute(
             "INSERT INTO llm_logs (command, ticker, backend, model, temperature, prompt, response)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            rusqlite::params![command, ticker, backend, model, temperature, prompt, response],
+            rusqlite::params![
+                command,
+                ticker,
+                backend,
+                model,
+                temperature,
+                prompt,
+                response
+            ],
         )?;
         Ok::<(), rusqlite::Error>(())
     })
@@ -803,4 +812,225 @@ pub async fn list_llm_logs(
     })
     .await
     .context("Failed to list LLM logs")
+}
+
+// ─── Orders ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Order {
+    pub id: i64,
+    pub stock_id: i64,
+    pub ticker: String,
+    pub name: String,
+    pub side: String,
+    pub order_type: String,
+    pub price: String,
+    pub quantity: String,
+    pub status: String,
+    pub tachibana_order_id: Option<String>,
+    pub request_id: String,
+    pub filled_price: Option<String>,
+    pub filled_quantity: Option<String>,
+    pub filled_at: Option<String>,
+    pub evaluation_id: Option<i64>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Insert an order idempotently (INSERT OR IGNORE on request_id UNIQUE).
+#[allow(clippy::too_many_arguments)]
+pub async fn save_order(
+    conn: &Connection,
+    stock_id: i64,
+    side: &str,
+    order_type: &str,
+    price: &str,
+    quantity: &str,
+    request_id: &str,
+    evaluation_id: Option<i64>,
+) -> Result<i64> {
+    let side = side.to_string();
+    let order_type = order_type.to_string();
+    let price = price.to_string();
+    let quantity = quantity.to_string();
+    let request_id = request_id.to_string();
+
+    conn.call(move |conn| {
+        conn.execute(
+            "INSERT OR IGNORE INTO orders (stock_id, side, order_type, price, quantity, request_id, evaluation_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![stock_id, side, order_type, price, quantity, request_id, evaluation_id],
+        )?;
+        let id: i64 = conn.query_row(
+            "SELECT id FROM orders WHERE request_id = ?1",
+            rusqlite::params![request_id],
+            |row| row.get(0),
+        )?;
+        Ok::<i64, rusqlite::Error>(id)
+    })
+    .await
+    .context("Failed to save order")
+}
+
+/// Update order status and optionally set fill details and tachibana_order_id.
+pub async fn update_order_status(
+    conn: &Connection,
+    order_id: i64,
+    status: &str,
+    tachibana_order_id: Option<&str>,
+    filled_price: Option<&str>,
+    filled_quantity: Option<&str>,
+    filled_at: Option<&str>,
+) -> Result<()> {
+    let status = status.to_string();
+    let tachibana_order_id = tachibana_order_id.map(|s| s.to_string());
+    let filled_price = filled_price.map(|s| s.to_string());
+    let filled_quantity = filled_quantity.map(|s| s.to_string());
+    let filled_at = filled_at.map(|s| s.to_string());
+
+    conn.call(move |conn| {
+        conn.execute(
+            "UPDATE orders SET status = ?1, tachibana_order_id = COALESCE(?2, tachibana_order_id),
+             filled_price = COALESCE(?3, filled_price), filled_quantity = COALESCE(?4, filled_quantity),
+             filled_at = COALESCE(?5, filled_at), updated_at = datetime('now')
+             WHERE id = ?6",
+            rusqlite::params![status, tachibana_order_id, filled_price, filled_quantity, filled_at, order_id],
+        )?;
+        Ok::<(), rusqlite::Error>(())
+    })
+    .await
+    .context("Failed to update order status")
+}
+
+/// List orders with status = 'pending'.
+pub async fn list_pending_orders(conn: &Connection) -> Result<Vec<Order>> {
+    list_orders_by_status(conn, Some("pending")).await
+}
+
+/// List orders, optionally filtered by status.
+pub async fn list_orders(
+    conn: &Connection,
+    limit: i64,
+    status: Option<&str>,
+) -> Result<Vec<Order>> {
+    let status = status.map(|s| s.to_string());
+    conn.call(move |conn| {
+        let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match &status {
+            Some(s) => (
+                "SELECT o.id, o.stock_id, s.ticker, s.name, o.side, o.order_type, o.price, o.quantity,
+                        o.status, o.tachibana_order_id, o.request_id, o.filled_price, o.filled_quantity,
+                        o.filled_at, o.evaluation_id, o.created_at, o.updated_at
+                 FROM orders o JOIN stocks s ON s.id = o.stock_id
+                 WHERE o.status = ?1
+                 ORDER BY o.created_at DESC LIMIT ?2".to_string(),
+                vec![Box::new(s.clone()) as Box<dyn rusqlite::types::ToSql>, Box::new(limit)],
+            ),
+            None => (
+                "SELECT o.id, o.stock_id, s.ticker, s.name, o.side, o.order_type, o.price, o.quantity,
+                        o.status, o.tachibana_order_id, o.request_id, o.filled_price, o.filled_quantity,
+                        o.filled_at, o.evaluation_id, o.created_at, o.updated_at
+                 FROM orders o JOIN stocks s ON s.id = o.stock_id
+                 ORDER BY o.created_at DESC LIMIT ?1".to_string(),
+                vec![Box::new(limit) as Box<dyn rusqlite::types::ToSql>],
+            ),
+        };
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(params.iter()), |row| {
+                Ok(Order {
+                    id: row.get(0)?,
+                    stock_id: row.get(1)?,
+                    ticker: row.get(2)?,
+                    name: row.get(3)?,
+                    side: row.get(4)?,
+                    order_type: row.get(5)?,
+                    price: row.get(6)?,
+                    quantity: row.get(7)?,
+                    status: row.get(8)?,
+                    tachibana_order_id: row.get(9)?,
+                    request_id: row.get(10)?,
+                    filled_price: row.get(11)?,
+                    filled_quantity: row.get(12)?,
+                    filled_at: row.get(13)?,
+                    evaluation_id: row.get(14)?,
+                    created_at: row.get(15)?,
+                    updated_at: row.get(16)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok::<Vec<Order>, rusqlite::Error>(rows)
+    })
+    .await
+    .context("Failed to list orders")
+}
+
+async fn list_orders_by_status(conn: &Connection, status: Option<&str>) -> Result<Vec<Order>> {
+    let status = status.map(|s| s.to_string());
+    conn.call(move |conn| {
+        let (sql, params): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = match &status {
+            Some(s) => (
+                "SELECT o.id, o.stock_id, s.ticker, s.name, o.side, o.order_type, o.price, o.quantity,
+                        o.status, o.tachibana_order_id, o.request_id, o.filled_price, o.filled_quantity,
+                        o.filled_at, o.evaluation_id, o.created_at, o.updated_at
+                 FROM orders o JOIN stocks s ON s.id = o.stock_id
+                 WHERE o.status = ?1
+                 ORDER BY o.created_at DESC",
+                vec![Box::new(s.clone()) as Box<dyn rusqlite::types::ToSql>],
+            ),
+            None => (
+                "SELECT o.id, o.stock_id, s.ticker, s.name, o.side, o.order_type, o.price, o.quantity,
+                        o.status, o.tachibana_order_id, o.request_id, o.filled_price, o.filled_quantity,
+                        o.filled_at, o.evaluation_id, o.created_at, o.updated_at
+                 FROM orders o JOIN stocks s ON s.id = o.stock_id
+                 ORDER BY o.created_at DESC",
+                vec![],
+            ),
+        };
+        let mut stmt = conn.prepare(sql)?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(params.iter()), |row| {
+                Ok(Order {
+                    id: row.get(0)?,
+                    stock_id: row.get(1)?,
+                    ticker: row.get(2)?,
+                    name: row.get(3)?,
+                    side: row.get(4)?,
+                    order_type: row.get(5)?,
+                    price: row.get(6)?,
+                    quantity: row.get(7)?,
+                    status: row.get(8)?,
+                    tachibana_order_id: row.get(9)?,
+                    request_id: row.get(10)?,
+                    filled_price: row.get(11)?,
+                    filled_quantity: row.get(12)?,
+                    filled_at: row.get(13)?,
+                    evaluation_id: row.get(14)?,
+                    created_at: row.get(15)?,
+                    updated_at: row.get(16)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok::<Vec<Order>, rusqlite::Error>(rows)
+    })
+    .await
+    .context("Failed to list orders by status")
+}
+
+/// Check if an order already exists for a given evaluation_id + side combo.
+pub async fn order_exists_for_evaluation(
+    conn: &Connection,
+    evaluation_id: i64,
+    side: &str,
+) -> Result<bool> {
+    let side = side.to_string();
+    conn.call(move |conn| {
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM orders WHERE evaluation_id = ?1 AND side = ?2",
+            rusqlite::params![evaluation_id, side],
+            |row| row.get(0),
+        )?;
+        Ok::<bool, rusqlite::Error>(count > 0)
+    })
+    .await
+    .context("Failed to check order existence")
 }

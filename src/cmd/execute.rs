@@ -323,8 +323,7 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
             }
 
             // Use latest close price as limit price
-            let price_data = db::fetch_price_data(conn, stock_id).await?;
-            let last_close = price_data.closes.last().copied().unwrap_or(0.0);
+            let last_close = db::get_latest_close(conn, stock_id).await?.unwrap_or(0.0);
             if last_close <= 0.0 {
                 warn!(ticker = %sig.ticker, "No price data available, skipping order");
                 continue;
@@ -419,18 +418,16 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
         && !new_tachibana_order_ids.is_empty()
         && let Some(ref client) = client
     {
-        let timeout = client.event_timeout_secs();
         info!(
-            timeout_secs = timeout,
             order_count = new_tachibana_order_ids.len(),
             "Waiting for fill notifications"
         );
 
-        match client
-            .wait_for_fills(timeout, &new_tachibana_order_ids)
-            .await
-        {
+        match client.wait_for_fills(&new_tachibana_order_ids).await {
             Ok(fills) => {
+                // Fetch pending orders once for all fills
+                let pending = db::list_pending_orders(conn).await?;
+
                 for fill in fills {
                     // Update matching order result
                     if let Some(or) = order_results
@@ -440,9 +437,8 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
                         or.status = "filled".to_string();
                     }
 
-                    // Find matching pending order in DB
-                    let orders = db::list_pending_orders(conn).await?;
-                    if let Some(order) = orders
+                    // Find matching pending order from pre-fetched list
+                    if let Some(order) = pending
                         .iter()
                         .find(|o| o.tachibana_order_id.as_deref() == Some(&fill.order_number))
                     {

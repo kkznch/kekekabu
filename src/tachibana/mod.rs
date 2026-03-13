@@ -112,9 +112,8 @@ impl TachibanaClient {
         self.login().await
     }
 
-    /// Send a REQUEST I/F command and return the parsed response.
-    #[allow(dead_code)]
-    pub async fn send_request(&self, json_value: &serde_json::Value) -> Result<serde_json::Value> {
+    /// Send a REQUEST I/F command and return the parsed response body string.
+    async fn send_request_raw(&self, json_value: &serde_json::Value) -> Result<String> {
         let session = self
             .session
             .as_ref()
@@ -128,9 +127,7 @@ impl TachibanaClient {
             .await
             .context("Failed to send request")?;
         let bytes = resp.bytes().await.context("Failed to read response")?;
-        let body = decode_shift_jis(&bytes);
-
-        request::parse_response(&body)
+        Ok(decode_shift_jis(&bytes))
     }
 
     /// Place a new limit order.
@@ -142,56 +139,20 @@ impl TachibanaClient {
         quantity: &str,
     ) -> Result<order::NewOrderResult> {
         let json = order::build_new_order_json(side, ticker, price, quantity);
-        let session = self
-            .session
-            .as_ref()
-            .context("Not logged in — call login() first")?;
-
-        let url = request::build_request_url(&session.request_url, &json)?;
-        let resp = self
-            .http
-            .get(&url)
-            .send()
-            .await
-            .context("Failed to send order")?;
-        let bytes = resp
-            .bytes()
-            .await
-            .context("Failed to read order response")?;
-        let body = decode_shift_jis(&bytes);
-
+        let body = self.send_request_raw(&json).await?;
         order::parse_new_order_response(&body)
     }
 
     /// Query order detail by order number.
     pub async fn query_order(&self, order_number: &str) -> Result<order::OrderDetail> {
-        let eigyou_day = ""; // empty = today
-        let json = order::build_order_detail_json(order_number, eigyou_day);
-        let session = self
-            .session
-            .as_ref()
-            .context("Not logged in — call login() first")?;
-
-        let url = request::build_request_url(&session.request_url, &json)?;
-        let resp = self
-            .http
-            .get(&url)
-            .send()
-            .await
-            .context("Failed to send order query")?;
-        let bytes = resp
-            .bytes()
-            .await
-            .context("Failed to read order query response")?;
-        let body = decode_shift_jis(&bytes);
-
+        let json = order::build_order_detail_json(order_number, "");
+        let body = self.send_request_raw(&json).await?;
         order::parse_order_detail_response(&body)
     }
 
-    /// Wait for fill notifications via WebSocket.
+    /// Wait for fill notifications via WebSocket (uses config timeout).
     pub async fn wait_for_fills(
         &self,
-        timeout_secs: u64,
         pending_order_numbers: &[String],
     ) -> Result<Vec<event::FillNotification>> {
         let session = self
@@ -199,7 +160,12 @@ impl TachibanaClient {
             .as_ref()
             .context("Not logged in — call login() first")?;
 
-        event::wait_for_fills(&session.event_ws_url, timeout_secs, pending_order_numbers).await
+        event::wait_for_fills(
+            &session.event_ws_url,
+            self.config.event_timeout_secs,
+            pending_order_numbers,
+        )
+        .await
     }
 
     /// Log out (invalidate virtual URLs).
@@ -220,10 +186,5 @@ impl TachibanaClient {
         }
         self.session = None;
         Ok(())
-    }
-
-    /// Get the event timeout from config.
-    pub fn event_timeout_secs(&self) -> u64 {
-        self.config.event_timeout_secs
     }
 }

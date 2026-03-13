@@ -234,6 +234,25 @@ pub async fn fetch_price_data(conn: &Connection, stock_id: i64) -> Result<PriceD
     .context("Failed to fetch price data")
 }
 
+/// Get the latest close price for a stock (avoids loading full price history).
+pub async fn get_latest_close(conn: &Connection, stock_id: i64) -> Result<Option<f64>> {
+    conn.call(move |conn| {
+        let result = conn
+            .query_row(
+                "SELECT close FROM prices WHERE stock_id = ?1 ORDER BY date DESC LIMIT 1",
+                [stock_id],
+                |row| {
+                    let close_str: String = row.get(0)?;
+                    Ok(decimal_str_to_f64(&close_str))
+                },
+            )
+            .ok();
+        Ok::<Option<f64>, rusqlite::Error>(result)
+    })
+    .await
+    .context("Failed to get latest close price")
+}
+
 // -- Watchlist operations --
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -904,7 +923,29 @@ pub async fn update_order_status(
 
 /// List orders with status = 'pending'.
 pub async fn list_pending_orders(conn: &Connection) -> Result<Vec<Order>> {
-    list_orders_by_status(conn, Some("pending")).await
+    list_orders(conn, i64::MAX, Some("pending")).await
+}
+
+fn map_order_row(row: &rusqlite::Row) -> rusqlite::Result<Order> {
+    Ok(Order {
+        id: row.get(0)?,
+        stock_id: row.get(1)?,
+        ticker: row.get(2)?,
+        name: row.get(3)?,
+        side: row.get(4)?,
+        order_type: row.get(5)?,
+        price: row.get(6)?,
+        quantity: row.get(7)?,
+        status: row.get(8)?,
+        tachibana_order_id: row.get(9)?,
+        request_id: row.get(10)?,
+        filled_price: row.get(11)?,
+        filled_quantity: row.get(12)?,
+        filled_at: row.get(13)?,
+        evaluation_id: row.get(14)?,
+        created_at: row.get(15)?,
+        updated_at: row.get(16)?,
+    })
 }
 
 /// List orders, optionally filtered by status.
@@ -936,84 +977,12 @@ pub async fn list_orders(
         };
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt
-            .query_map(rusqlite::params_from_iter(params.iter()), |row| {
-                Ok(Order {
-                    id: row.get(0)?,
-                    stock_id: row.get(1)?,
-                    ticker: row.get(2)?,
-                    name: row.get(3)?,
-                    side: row.get(4)?,
-                    order_type: row.get(5)?,
-                    price: row.get(6)?,
-                    quantity: row.get(7)?,
-                    status: row.get(8)?,
-                    tachibana_order_id: row.get(9)?,
-                    request_id: row.get(10)?,
-                    filled_price: row.get(11)?,
-                    filled_quantity: row.get(12)?,
-                    filled_at: row.get(13)?,
-                    evaluation_id: row.get(14)?,
-                    created_at: row.get(15)?,
-                    updated_at: row.get(16)?,
-                })
-            })?
+            .query_map(rusqlite::params_from_iter(params.iter()), map_order_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok::<Vec<Order>, rusqlite::Error>(rows)
     })
     .await
     .context("Failed to list orders")
-}
-
-async fn list_orders_by_status(conn: &Connection, status: Option<&str>) -> Result<Vec<Order>> {
-    let status = status.map(|s| s.to_string());
-    conn.call(move |conn| {
-        let (sql, params): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = match &status {
-            Some(s) => (
-                "SELECT o.id, o.stock_id, s.ticker, s.name, o.side, o.order_type, o.price, o.quantity,
-                        o.status, o.tachibana_order_id, o.request_id, o.filled_price, o.filled_quantity,
-                        o.filled_at, o.evaluation_id, o.created_at, o.updated_at
-                 FROM orders o JOIN stocks s ON s.id = o.stock_id
-                 WHERE o.status = ?1
-                 ORDER BY o.created_at DESC",
-                vec![Box::new(s.clone()) as Box<dyn rusqlite::types::ToSql>],
-            ),
-            None => (
-                "SELECT o.id, o.stock_id, s.ticker, s.name, o.side, o.order_type, o.price, o.quantity,
-                        o.status, o.tachibana_order_id, o.request_id, o.filled_price, o.filled_quantity,
-                        o.filled_at, o.evaluation_id, o.created_at, o.updated_at
-                 FROM orders o JOIN stocks s ON s.id = o.stock_id
-                 ORDER BY o.created_at DESC",
-                vec![],
-            ),
-        };
-        let mut stmt = conn.prepare(sql)?;
-        let rows = stmt
-            .query_map(rusqlite::params_from_iter(params.iter()), |row| {
-                Ok(Order {
-                    id: row.get(0)?,
-                    stock_id: row.get(1)?,
-                    ticker: row.get(2)?,
-                    name: row.get(3)?,
-                    side: row.get(4)?,
-                    order_type: row.get(5)?,
-                    price: row.get(6)?,
-                    quantity: row.get(7)?,
-                    status: row.get(8)?,
-                    tachibana_order_id: row.get(9)?,
-                    request_id: row.get(10)?,
-                    filled_price: row.get(11)?,
-                    filled_quantity: row.get(12)?,
-                    filled_at: row.get(13)?,
-                    evaluation_id: row.get(14)?,
-                    created_at: row.get(15)?,
-                    updated_at: row.get(16)?,
-                })
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        Ok::<Vec<Order>, rusqlite::Error>(rows)
-    })
-    .await
-    .context("Failed to list orders by status")
 }
 
 /// Check if an order already exists for a given evaluation_id + side combo.

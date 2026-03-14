@@ -50,3 +50,14 @@
 #### Scenario: 件数制限付き取引履歴
 - **WHEN** `db.trade_history(20)` を呼び出した場合
 - **THEN** 直近20件の取引を返す（ticker, side, date, quantity, price, pnl）
+
+### Requirement: 取引集計の精度保証
+システムは SHALL 取引集計（trade_cash_summary）を Rust 側の Decimal 演算で行い、浮動小数点の精度損失を防ぐ。
+
+#### Scenario: 買い総額の集計
+- **WHEN** 複数の買い取引が存在する場合
+- **THEN** 各取引の price * quantity を Decimal で乗算・加算し、f64 に変換して返す
+
+#### Scenario: 売り総額の集計
+- **WHEN** 複数の売り取引が存在する場合
+- **THEN** 各取引の price * quantity を Decimal で乗算・加算し、f64 に変換して返す

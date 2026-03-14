@@ -81,7 +81,13 @@ pub async fn run(
     }
 
     // Load spec if available
-    let loaded_spec = spec::load_spec(&config.spec.path).ok();
+    let loaded_spec = match spec::load_spec(&config.spec.path) {
+        Ok(s) => Some(s),
+        Err(e) => {
+            warn!(path = %config.spec.path, error = %e, "Failed to load spec, using defaults");
+            None
+        }
+    };
     let spec_section = loaded_spec.as_ref().map(|s| s.to_prompt_section());
     let spec_hash_val = spec::spec_hash(&config.spec.path).ok();
     let budget_initial_cash = loaded_spec.as_ref().and_then(|s| s.budget_initial_cash());
@@ -419,9 +425,9 @@ pub(crate) fn eval_response_schema() -> serde_json::Value {
         "required": ["ticker", "status", "decision", "score", "analysis"],
         "properties": {
             "ticker": { "type": "string" },
-            "status": { "type": "string", "enum": ["Hunting", "Farming"] },
+            "status": { "type": "string", "enum": ["NewTarget", "ExistingHolding"] },
             "decision": { "type": "string", "enum": ["Buy", "Avoid", "Hold", "Sell"] },
-            "score": { "type": "integer", "minimum": -100, "maximum": 100 },
+            "score": { "type": "integer", "minimum": 0, "maximum": 100 },
             "analysis": {
                 "type": "object",
                 "required": ["catalyst_check", "risk_assessment", "spec_compliance"],

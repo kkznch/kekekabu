@@ -68,7 +68,10 @@ pub struct JQuantsClient {
 impl JQuantsClient {
     pub fn new(api_key: String) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_default(),
             api_key,
         }
     }
@@ -93,10 +96,22 @@ impl JQuantsClient {
                 continue;
             }
 
+            if resp.status().is_server_error() {
+                let wait = 2u64.pow(attempt + 1);
+                warn!(
+                    attempt = attempt + 1,
+                    status = %resp.status(),
+                    wait_secs = wait,
+                    "Server error, retrying"
+                );
+                tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+                continue;
+            }
+
             return Ok(resp);
         }
 
-        bail!("Rate limited after {} retries: {}", MAX_RETRIES, url)
+        bail!("Failed after {} retries: {}", MAX_RETRIES, url)
     }
 
     async fn get_all_stock_info_impl(&self) -> Result<Vec<ListedInfo>> {

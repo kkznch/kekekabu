@@ -1,5 +1,5 @@
 use anyhow::Result;
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use std::time::Duration;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -47,7 +47,15 @@ pub async fn wait_for_fills(
         }
     };
 
-    let (_write, mut read) = ws_stream.split();
+    let (mut write, mut read) = ws_stream.split();
+
+    // Send subscription message to register for execution notifications
+    let subscribe_msg = build_event_subscribe_json().to_string();
+    if let Err(e) = write.send(Message::Text(subscribe_msg.into())).await {
+        tracing::warn!(error = %e, "Failed to send EVENT subscribe message");
+        return Ok(fills);
+    }
+    tracing::info!("Sent EVENT I/F subscription for execution notifications");
     let timeout = tokio::time::sleep(Duration::from_secs(timeout_secs));
     tokio::pin!(timeout);
 
@@ -111,11 +119,10 @@ fn parse_fill_notification(text: &str) -> Option<FillNotification> {
         return None;
     }
 
-    // Check if the order is fully filled (status code "10")
+    // Check if the order is filled or partially filled
     let status_code = json_str(&value, "sOrderStatusCode").unwrap_or_default();
-    if status_code != "10" {
-        // Not a full fill — could be partial or other status change
-        // For now, only handle full fills
+    if status_code != "10" && status_code != "9" {
+        // Not a fill event — skip other status changes
         return None;
     }
 
@@ -133,8 +140,7 @@ fn parse_fill_notification(text: &str) -> Option<FillNotification> {
 }
 
 /// Build the EVENT I/F registration request to subscribe to execution notifications.
-#[allow(dead_code)]
-pub fn build_event_subscribe_json() -> serde_json::Value {
+fn build_event_subscribe_json() -> serde_json::Value {
     serde_json::json!({
         "p_evt_cmd": "EC",
         "p_no": super::request::next_p_no(),
@@ -167,6 +173,21 @@ mod tests {
     fn test_parse_fill_notification_not_ec() {
         let msg = r#"{"p_evt_cmd": "KP", "sIssueCode": "7203"}"#;
         assert!(parse_fill_notification(msg).is_none());
+    }
+
+    #[test]
+    fn test_parse_fill_notification_partial() {
+        let msg = r#"{
+            "p_evt_cmd": "EC",
+            "sOrderNumber": "ORD002",
+            "sIssueCode": "6758",
+            "sOrderStatusCode": "9",
+            "sYakuzyouPrice": "15000",
+            "sYakuzyouSuryou": "50"
+        }"#;
+        let fill = parse_fill_notification(msg).unwrap();
+        assert_eq!(fill.order_number, "ORD002");
+        assert_eq!(fill.filled_quantity, "50");
     }
 
     #[test]

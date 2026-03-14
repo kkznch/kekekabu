@@ -9,6 +9,8 @@ use self::schema::ALL_SCHEMAS;
 
 fn db_path() -> std::path::PathBuf {
     if let Some(dir) = crate::config::config_dir() {
+        // Ensure directory exists for DB file creation
+        let _ = std::fs::create_dir_all(&dir);
         return dir.join("kekekabu.db");
     }
     std::path::PathBuf::from("./kekekabu.db")
@@ -31,6 +33,15 @@ pub async fn init_db() -> Result<Connection> {
     let conn = Connection::open(&path)
         .await
         .with_context(|| format!("Failed to open database at {:?}", path))?;
+
+    // Enable WAL mode and set busy_timeout for concurrent access
+    conn.call(|conn| {
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")?;
+        Ok::<(), rusqlite::Error>(())
+    })
+    .await
+    .context("Failed to set database pragmas")?;
+
     create_tables(&conn).await?;
     Ok(conn)
 }
@@ -152,14 +163,17 @@ pub async fn save_prices(
             let volume = q.volume.map(|v| v as i64).unwrap_or(0);
             let adj_close = q.adjustment_close.and_then(Decimal::from_f64_retain);
 
-            let (Some(open), Some(high), Some(low), Some(close)) = (open, high, low, close)
-            else {
+            let (Some(open), Some(high), Some(low), Some(close)) = (open, high, low, close) else {
                 continue;
             };
 
             tx.execute(
-                "INSERT OR IGNORE INTO prices (stock_id, date, open, high, low, close, volume, adjusted_close)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                "INSERT INTO prices (stock_id, date, open, high, low, close, volume, adjusted_close)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                 ON CONFLICT(stock_id, date) DO UPDATE SET
+                   open = excluded.open, high = excluded.high, low = excluded.low,
+                   close = excluded.close, volume = excluded.volume,
+                   adjusted_close = excluded.adjusted_close",
                 rusqlite::params![
                     stock_id,
                     q.date,
@@ -182,9 +196,13 @@ pub async fn save_prices(
 // -- Price data fetch for TA --
 
 pub fn decimal_str_to_f64(s: &str) -> f64 {
-    Decimal::from_str(s)
-        .map(|d| d.to_string().parse::<f64>().unwrap_or(0.0))
-        .unwrap_or(0.0)
+    match Decimal::from_str(s) {
+        Ok(d) => d.to_string().parse::<f64>().unwrap_or(0.0),
+        Err(e) => {
+            tracing::warn!(value = %s, error = %e, "Failed to parse decimal string");
+            0.0
+        }
+    }
 }
 
 pub struct PriceData {
@@ -455,6 +473,10 @@ pub async fn save_fetch_result(
     let body = body.map(|s| s.to_string());
     let published_at = published_at.map(|s| s.to_string());
 
+    // Coalesce None URL to empty string for UNIQUE(stock_id, url) to work
+    // (SQLite treats NULL != NULL, so duplicates slip through with NULL url)
+    let url = url.or(Some(String::new()));
+
     conn.call(move |conn| {
         conn.execute(
             "INSERT OR IGNORE INTO fetch_results (stock_id, source, category, title, url, body, published_at)
@@ -702,14 +724,48 @@ pub async fn get_recent_evaluations_by_stock(
     .context("Failed to get recent evaluations by stock")
 }
 
+pub async fn get_evaluations_for_date(conn: &Connection, date: &str) -> Result<Vec<Evaluation>> {
+    let date = date.to_string();
+    conn.call(move |conn| {
+        let date_start = format!("{} 00:00:00", date);
+        let date_end = format!("{} 23:59:59", date);
+        let mut stmt = conn.prepare(
+            "SELECT e.id, s.ticker, s.name, e.decision, e.score, e.rationale, e.ta_summary, e.evaluated_at
+             FROM evaluations e
+             JOIN stocks s ON s.id = e.stock_id
+             WHERE e.evaluated_at BETWEEN ?1 AND ?2
+             ORDER BY e.score DESC",
+        )?;
+        let rows = stmt
+            .query_map(rusqlite::params![date_start, date_end], |row| {
+                Ok(Evaluation {
+                    id: row.get(0)?,
+                    ticker: row.get(1)?,
+                    name: row.get(2)?,
+                    decision: row.get(3)?,
+                    score: row.get(4)?,
+                    rationale: row.get(5)?,
+                    ta_summary: row.get(6)?,
+                    evaluated_at: row.get(7)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok::<Vec<Evaluation>, rusqlite::Error>(rows)
+    })
+    .await
+    .context("Failed to get evaluations for date")
+}
+
 pub async fn get_latest_evaluations_for_today(conn: &Connection) -> Result<Vec<Evaluation>> {
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     conn.call(move |conn| {
+        // Use subquery to get only the latest evaluation per stock for today
         let mut stmt = conn.prepare(
             "SELECT e.id, s.ticker, s.name, e.decision, e.score, e.rationale, e.ta_summary, e.evaluated_at
              FROM evaluations e
              JOIN stocks s ON s.id = e.stock_id
              WHERE e.evaluated_at >= ?1
+               AND e.id = (SELECT MAX(e2.id) FROM evaluations e2 WHERE e2.stock_id = e.stock_id AND e2.evaluated_at >= ?1)
              ORDER BY e.score DESC",
         )?;
         let rows = stmt
@@ -921,9 +977,23 @@ pub async fn update_order_status(
     .context("Failed to update order status")
 }
 
-/// List orders with status = 'pending'.
+/// List orders with status = 'pending' or 'partial' (unsettled orders).
 pub async fn list_pending_orders(conn: &Connection) -> Result<Vec<Order>> {
-    list_orders(conn, i64::MAX, Some("pending")).await
+    conn.call(move |conn| {
+        let sql = "SELECT o.id, o.stock_id, s.ticker, s.name, o.side, o.order_type, o.price, o.quantity,
+                        o.status, o.tachibana_order_id, o.request_id, o.filled_price, o.filled_quantity,
+                        o.filled_at, o.evaluation_id, o.created_at, o.updated_at
+                 FROM orders o JOIN stocks s ON s.id = o.stock_id
+                 WHERE o.status IN ('pending', 'partial')
+                 ORDER BY o.created_at DESC";
+        let mut stmt = conn.prepare(sql)?;
+        let rows = stmt
+            .query_map([], map_order_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok::<Vec<Order>, rusqlite::Error>(rows)
+    })
+    .await
+    .context("Failed to list pending orders")
 }
 
 fn map_order_row(row: &rusqlite::Row) -> rusqlite::Result<Order> {

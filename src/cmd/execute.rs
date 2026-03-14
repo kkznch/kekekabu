@@ -87,8 +87,8 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
                 match client.query_order(tachibana_id).await {
                     Ok(detail) => {
                         let new_status = map_status_code(&detail.status_code);
-                        if new_status != "pending" {
-                            let filled_at = if new_status == "filled" {
+                        if new_status != "pending" && new_status != order.status {
+                            let filled_at = if new_status == "filled" || new_status == "partial" {
                                 Some(chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string())
                             } else {
                                 None
@@ -105,8 +105,8 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
                             )
                             .await?;
 
-                            // If filled, record in portfolio
-                            if new_status == "filled" {
+                            // If filled or partially filled, record in portfolio
+                            if new_status == "filled" || new_status == "partial" {
                                 record_fill(
                                     conn,
                                     &order.ticker,
@@ -120,7 +120,7 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
                             settle_results.push(SettleResult {
                                 ticker: order.ticker.clone(),
                                 order_id: order.id,
-                                old_status: "pending".to_string(),
+                                old_status: order.status.clone(),
                                 new_status: new_status.to_string(),
                                 filled_price: detail.filled_price,
                                 filled_quantity: detail.filled_quantity,
@@ -156,6 +156,9 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
     let cb = circuit_breaker::check(conn).await?;
     if !cb.safe {
         warn!("Circuit breaker triggered! Aborting execute.");
+        if let Some(ref mut client) = client {
+            let _ = client.logout().await;
+        }
         return Ok(ExecuteResult {
             actions: vec![],
             circuit_breaker_triggered: true,
@@ -280,7 +283,7 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
                 None,
             ),
             "Avoid" if eval.score <= 30 => (
-                "sell_signal",
+                "review",
                 format!(
                     "Avoid signal for {} (score: {}). Review existing positions.",
                     eval.ticker, eval.score

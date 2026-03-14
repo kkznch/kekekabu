@@ -232,7 +232,7 @@ impl HumanDisplay for crate::db::WatchlistEvent {
         };
         println!(
             "  {} {:<6} {}  {}",
-            &self.discovered_at[..10],
+            self.discovered_at.get(..10).unwrap_or(&self.discovered_at),
             self.ticker,
             action_display,
             self.reason.as_deref().unwrap_or("")
@@ -321,7 +321,7 @@ impl HumanDisplay for crate::db::LlmLog {
         println!(
             "[{}] {} cmd:{} ticker:{} backend:{} temp:{}",
             self.id,
-            &self.created_at[..19],
+            self.created_at.get(..19).unwrap_or(&self.created_at),
             self.command,
             ticker,
             self.backend,

@@ -113,6 +113,8 @@ impl WorkflowReport {
 
 // ─── Pipeline ───────────────────────────────────────────────────────
 
+const VALID_SKIP_STEPS: &[&str] = &["discover", "scan", "fetch"];
+
 pub async fn run(
     conn: &Connection,
     config: &AppConfig,
@@ -120,6 +122,16 @@ pub async fn run(
     skip: &[String],
 ) -> Result<WorkflowReport> {
     let mut report = WorkflowReport::new();
+
+    for s in skip {
+        if !VALID_SKIP_STEPS.contains(&s.as_str()) {
+            warn!(
+                step = %s,
+                valid = ?VALID_SKIP_STEPS,
+                "Unknown --skip value, ignoring"
+            );
+        }
+    }
 
     step_discover(&mut report, conn, config, skip).await;
 
@@ -275,7 +287,13 @@ async fn step_eval(
         config.llm.eval_model.as_deref(),
     )?;
 
-    let loaded_spec = spec::load_spec(&config.spec.path).ok();
+    let loaded_spec = match spec::load_spec(&config.spec.path) {
+        Ok(s) => Some(s),
+        Err(e) => {
+            warn!(path = %config.spec.path, error = %e, "Failed to load spec, using defaults");
+            None
+        }
+    };
     let spec_section = loaded_spec.as_ref().map(|s| s.to_prompt_section());
     let spec_hash_val = spec::spec_hash(&config.spec.path).ok();
     let budget_initial_cash = loaded_spec.as_ref().and_then(|s| s.budget_initial_cash());

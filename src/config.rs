@@ -131,7 +131,12 @@ impl SpecConfig {
 
 pub fn config_dir() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
-    let dir = PathBuf::from(home).join(".config/kabu");
+    Some(PathBuf::from(home).join(".config/kabu"))
+}
+
+/// Ensure config directory exists (call only on write paths).
+fn ensure_config_dir() -> Option<PathBuf> {
+    let dir = config_dir()?;
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir)
 }
@@ -220,7 +225,7 @@ trailing_stop = 0.15
 "#;
 
 pub fn init_config(force: bool) -> Result<()> {
-    let dir = config_dir().context("Failed to determine config directory")?;
+    let dir = ensure_config_dir().context("Failed to determine config directory")?;
     let config_path = dir.join("config.toml");
     let spec_dir = dir.join("specs");
     let spec_path = spec_dir.join("template.toml");

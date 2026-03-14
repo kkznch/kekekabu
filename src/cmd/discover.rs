@@ -42,7 +42,13 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
         config.llm.fetch_model.as_deref(),
     )?;
 
-    let loaded_spec = spec::load_spec(&config.spec.path).ok();
+    let loaded_spec = match spec::load_spec(&config.spec.path) {
+        Ok(s) => Some(s),
+        Err(e) => {
+            warn!(path = %config.spec.path, error = %e, "Failed to load spec, using defaults");
+            None
+        }
+    };
     let spec_section = loaded_spec.as_ref().map(|s| s.to_prompt_section());
     let budget_initial_cash = loaded_spec.as_ref().and_then(|s| s.budget_initial_cash());
 
@@ -108,6 +114,23 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
 
     let response = parse_discover_response(&response_text)?;
 
+    // Deduplicate: if a ticker appears in multiple lists, skip conflicting actions
+    let mut seen_tickers: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut conflicts: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for action in response
+        .add
+        .iter()
+        .chain(response.remove.iter())
+        .chain(response.keep.iter())
+    {
+        if !seen_tickers.insert(action.ticker.clone()) {
+            conflicts.insert(action.ticker.clone());
+        }
+    }
+    for ticker in &conflicts {
+        warn!(ticker = %ticker, "Ticker appears in multiple lists (add/remove/keep), skipping");
+    }
+
     // Get held tickers to protect from removal
     let positions = portfolio::list_positions(conn).await?;
     let held_tickers: std::collections::HashSet<String> =
@@ -116,6 +139,9 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
     // Process add actions
     let mut added = Vec::new();
     for action in &response.add {
+        if conflicts.contains(&action.ticker) {
+            continue;
+        }
         if !is_valid_ticker(&action.ticker) {
             warn!(ticker = %action.ticker, "Invalid ticker format, skipping");
             continue;
@@ -138,6 +164,9 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
     let mut removed = Vec::new();
     let mut kept = Vec::new();
     for action in &response.remove {
+        if conflicts.contains(&action.ticker) {
+            continue;
+        }
         if !is_valid_ticker(&action.ticker) {
             warn!(ticker = %action.ticker, "Invalid ticker format, skipping");
             continue;
@@ -157,6 +186,9 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
 
     // Process keep actions (log events)
     for action in &response.keep {
+        if conflicts.contains(&action.ticker) {
+            continue;
+        }
         if !is_valid_ticker(&action.ticker) {
             warn!(ticker = %action.ticker, "Invalid ticker format, skipping");
             continue;
@@ -289,7 +321,7 @@ fn extract_json(text: &str) -> &str {
 }
 
 fn is_valid_ticker(ticker: &str) -> bool {
-    ticker.len() == 4 && ticker.chars().all(|c| c.is_ascii_digit())
+    (ticker.len() == 4 || ticker.len() == 5) && ticker.chars().all(|c| c.is_ascii_digit())
 }
 
 #[cfg(test)]
@@ -336,8 +368,10 @@ mod tests {
     fn test_is_valid_ticker() {
         assert!(is_valid_ticker("7203"));
         assert!(is_valid_ticker("9984"));
+        assert!(is_valid_ticker("13060")); // ETF
+        assert!(is_valid_ticker("25935")); // REIT
         assert!(!is_valid_ticker("723"));
-        assert!(!is_valid_ticker("72034"));
+        assert!(!is_valid_ticker("720345"));
         assert!(!is_valid_ticker("AAPL"));
         assert!(!is_valid_ticker("720A"));
         assert!(!is_valid_ticker(""));

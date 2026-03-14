@@ -104,11 +104,34 @@ pub async fn buy(
             let buy_price = Decimal::from_str(&price_str).unwrap_or_default();
             let invested = buy_qty * buy_price;
 
-            tx.execute(
-                "INSERT INTO portfolio_positions (stock_id, quantity, avg_cost, total_invested)
-                 VALUES (?1, ?2, ?3, ?4)",
-                rusqlite::params![stock_id, quantity_str, price_str, invested.to_string()],
-            )?;
+            // Check for inactive position (previously sold) and reactivate it
+            let inactive_id: Option<i64> = tx
+                .query_row(
+                    "SELECT id FROM portfolio_positions WHERE stock_id = ?1 AND is_active = 0",
+                    [stock_id],
+                    |row| row.get(0),
+                )
+                .ok();
+
+            if let Some(pos_id) = inactive_id {
+                tx.execute(
+                    "UPDATE portfolio_positions
+                     SET quantity = ?1, avg_cost = ?2, total_invested = ?3, is_active = 1, updated_at = datetime('now')
+                     WHERE id = ?4",
+                    rusqlite::params![
+                        quantity_str,
+                        price_str,
+                        invested.to_string(),
+                        pos_id
+                    ],
+                )?;
+            } else {
+                tx.execute(
+                    "INSERT INTO portfolio_positions (stock_id, quantity, avg_cost, total_invested)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    rusqlite::params![stock_id, quantity_str, price_str, invested.to_string()],
+                )?;
+            }
         }
 
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();

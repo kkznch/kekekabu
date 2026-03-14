@@ -4,13 +4,10 @@ use tokio_rusqlite::Connection;
 use crate::db;
 
 pub async fn run(conn: &Connection, date: Option<&str>) -> Result<String> {
-    let evals = if date.is_some() {
-        db::list_evaluations(conn, 100).await?
-    } else {
-        db::get_latest_evaluations_for_today(conn).await?
-    };
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let date_str = date.unwrap_or(&today);
 
-    let date_str = date.unwrap_or("today");
+    let evals = db::get_evaluations_for_date(conn, date_str).await?;
 
     let mut md = String::new();
     md.push_str(&format!("# Investment Report ({})\n\n", date_str));
@@ -49,7 +46,7 @@ pub async fn run(conn: &Connection, date: Option<&str>) -> Result<String> {
                     for fr in fetch_results.iter().take(5) {
                         md.push_str(&format!("- [{}] {}", fr.category, fr.title));
                         if let Some(ref url) = fr.url {
-                            md.push_str(&format!(" ([source]({})", url));
+                            md.push_str(&format!(" ([source]({}))", url));
                         }
                         md.push('\n');
                     }

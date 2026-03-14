@@ -1,8 +1,4 @@
-## Purpose
-
-ポートフォリオ管理。売買記録、加重平均コスト計算、P&L 算出、ポジション追跡を行い、投資の全履歴を保持する。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: 買い取引の記録
 システムは SHALL 買い取引を記録し、加重平均コストでポートフォリオポジションを更新する。買い操作は `SqliteClient` のメソッド（`portfolio_buy`）として実装し、内部で `buy_sync`（`pub(crate)`）をトランザクション内で呼び出す。

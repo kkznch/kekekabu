@@ -1,14 +1,10 @@
 use anyhow::Result;
-use rust_decimal::Decimal;
 use serde::Serialize;
-use std::str::FromStr;
-use tokio_rusqlite::Connection;
 use tracing::{info, warn};
 
 use crate::circuit_breaker;
 use crate::config::AppConfig;
-use crate::db;
-use crate::portfolio;
+use crate::db::{DbClient, FillParams};
 use crate::tachibana::TachibanaClient;
 use crate::tachibana::order::map_status_code;
 
@@ -51,7 +47,7 @@ pub struct OrderResult {
     pub status: String,
 }
 
-pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result<ExecuteResult> {
+pub async fn run(conn: &dyn DbClient, config: &AppConfig, dry_run: bool) -> Result<ExecuteResult> {
     let mut settle_results = Vec::new();
     let mut order_results = Vec::new();
 
@@ -69,7 +65,7 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
     };
 
     // ── Phase 1: Settle — check previous pending orders ──
-    let pending_orders = db::list_pending_orders(conn).await?;
+    let pending_orders = conn.list_pending_orders().await?;
     if !pending_orders.is_empty() {
         if let Some(ref mut client) = client {
             info!(count = pending_orders.len(), "Settling pending orders");
@@ -94,25 +90,26 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
                                 None
                             };
 
-                            db::update_order_status(
-                                conn,
-                                order.id,
-                                new_status,
-                                None,
-                                detail.filled_price.as_deref(),
-                                detail.filled_quantity.as_deref(),
-                                filled_at.as_deref(),
-                            )
-                            .await?;
-
-                            // If filled or partially filled, record in portfolio
                             if new_status == "filled" || new_status == "partial" {
-                                record_fill(
-                                    conn,
-                                    &order.ticker,
-                                    &order.side,
+                                conn.update_order_and_record_fill(FillParams {
+                                    order_id: order.id,
+                                    status: new_status.to_string(),
+                                    tachibana_order_id: None,
+                                    filled_price: detail.filled_price.clone(),
+                                    filled_quantity: detail.filled_quantity.clone(),
+                                    filled_at,
+                                    ticker: order.ticker.clone(),
+                                    side: order.side.clone(),
+                                })
+                                .await?;
+                            } else {
+                                conn.update_order_status(
+                                    order.id,
+                                    new_status,
+                                    None,
                                     detail.filled_price.as_deref(),
                                     detail.filled_quantity.as_deref(),
+                                    None,
                                 )
                                 .await?;
                             }
@@ -169,7 +166,7 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
     }
 
     // ── Phase 3: Get today's evaluations and generate signals ──
-    let evals = db::get_latest_evaluations_for_today(conn).await?;
+    let evals = conn.get_latest_evaluations_for_today().await?;
     if evals.is_empty() {
         info!("No evaluations for today. Nothing to execute.");
         if let Some(ref mut client) = client {
@@ -184,7 +181,7 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
         });
     }
 
-    let positions = portfolio::list_positions(conn).await?;
+    let positions = conn.list_positions().await?;
     let held_tickers: std::collections::HashSet<String> =
         positions.iter().map(|p| p.ticker.clone()).collect();
 
@@ -195,7 +192,7 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
         let (action_type, detail, signal) = match eval.decision.as_str() {
             "Buy" if eval.score >= 70 => {
                 // Idempotency check
-                if db::order_exists_for_evaluation(conn, eval.id, "buy").await? {
+                if conn.order_exists_for_evaluation(eval.id, "buy").await? {
                     info!(
                         ticker = %eval.ticker,
                         eval_id = eval.id,
@@ -239,7 +236,7 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
                 None,
             ),
             "Sell" if held_tickers.contains(&eval.ticker) => {
-                if db::order_exists_for_evaluation(conn, eval.id, "sell").await? {
+                if conn.order_exists_for_evaluation(eval.id, "sell").await? {
                     info!(
                         ticker = %eval.ticker,
                         eval_id = eval.id,
@@ -319,14 +316,14 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
         client.ensure_logged_in().await?;
 
         for sig in &signals {
-            let stock_id = db::get_stock_id(conn, &sig.ticker).await?.unwrap_or(0);
+            let stock_id = conn.get_stock_id(&sig.ticker).await?.unwrap_or(0);
             if stock_id == 0 {
                 warn!(ticker = %sig.ticker, "Stock not found in DB, skipping order");
                 continue;
             }
 
             // Use latest close price as limit price
-            let last_close = db::get_latest_close(conn, stock_id).await?.unwrap_or(0.0);
+            let last_close = conn.get_latest_close(stock_id).await?.unwrap_or(0.0);
             if last_close <= 0.0 {
                 warn!(ticker = %sig.ticker, "No price data available, skipping order");
                 continue;
@@ -349,17 +346,17 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
             let request_id = format!("{}-{}-{}-{}", today, sig.ticker, sig.side, sig.eval_id);
 
             // Save order to DB first (idempotent)
-            let order_id = db::save_order(
-                conn,
-                stock_id,
-                &sig.side,
-                "limit",
-                &price_str,
-                &quantity,
-                &request_id,
-                Some(sig.eval_id),
-            )
-            .await?;
+            let order_id = conn
+                .save_order(
+                    stock_id,
+                    &sig.side,
+                    "limit",
+                    &price_str,
+                    &quantity,
+                    &request_id,
+                    Some(sig.eval_id),
+                )
+                .await?;
 
             // Place order via Tachibana API
             match client
@@ -376,8 +373,7 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
                         "Order placed successfully"
                     );
 
-                    db::update_order_status(
-                        conn,
+                    conn.update_order_status(
                         order_id,
                         "pending",
                         Some(&result.order_number),
@@ -400,7 +396,7 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
                 }
                 Err(e) => {
                     warn!(ticker = %sig.ticker, error = %e, "Failed to place order");
-                    db::update_order_status(conn, order_id, "rejected", None, None, None, None)
+                    conn.update_order_status(order_id, "rejected", None, None, None, None)
                         .await?;
 
                     order_results.push(OrderResult {
@@ -429,7 +425,7 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
         match client.wait_for_fills(&new_tachibana_order_ids).await {
             Ok(fills) => {
                 // Fetch pending orders once for all fills
-                let pending = db::list_pending_orders(conn).await?;
+                let pending = conn.list_pending_orders().await?;
 
                 for fill in fills {
                     // Update matching order result
@@ -448,24 +444,16 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
                         let filled_at =
                             chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
-                        db::update_order_status(
-                            conn,
-                            order.id,
-                            "filled",
-                            None,
-                            Some(&fill.filled_price),
-                            Some(&fill.filled_quantity),
-                            Some(&filled_at),
-                        )
-                        .await?;
-
-                        record_fill(
-                            conn,
-                            &order.ticker,
-                            &order.side,
-                            Some(&fill.filled_price),
-                            Some(&fill.filled_quantity),
-                        )
+                        conn.update_order_and_record_fill(FillParams {
+                            order_id: order.id,
+                            status: "filled".to_string(),
+                            tachibana_order_id: None,
+                            filled_price: Some(fill.filled_price.clone()),
+                            filled_quantity: Some(fill.filled_quantity.clone()),
+                            filled_at: Some(filled_at),
+                            ticker: order.ticker.clone(),
+                            side: order.side.clone(),
+                        })
                         .await?;
 
                         info!(
@@ -495,27 +483,6 @@ pub async fn run(conn: &Connection, config: &AppConfig, dry_run: bool) -> Result
         settle_results,
         order_results,
     })
-}
-
-/// Record a fill in the portfolio (buy or sell).
-async fn record_fill(
-    conn: &Connection,
-    ticker: &str,
-    side: &str,
-    filled_price: Option<&str>,
-    filled_quantity: Option<&str>,
-) -> Result<()> {
-    if let (Some(fp), Some(fq)) = (filled_price, filled_quantity) {
-        let price = Decimal::from_str(fp).unwrap_or_default();
-        let qty = Decimal::from_str(fq).unwrap_or_default();
-
-        match side {
-            "buy" => portfolio::buy(conn, ticker, qty, price, Some("tachibana-fill")).await?,
-            "sell" => portfolio::sell(conn, ticker, qty, price, Some("tachibana-fill")).await?,
-            _ => {}
-        }
-    }
-    Ok(())
 }
 
 /// Internal signal for order placement.

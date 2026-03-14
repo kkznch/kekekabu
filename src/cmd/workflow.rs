@@ -1,17 +1,16 @@
 use anyhow::Result;
 use serde::Serialize;
-use tokio_rusqlite::Connection;
 use tracing::{info, warn};
 
 use crate::cmd::discover;
 use crate::cmd::eval::{self, PositionInfo};
 use crate::cmd::fetch;
 use crate::config::AppConfig;
-use crate::db::{self, WatchlistItem};
+use crate::db::{DbClient, WatchlistItem};
 use crate::indicators;
 use crate::jquants::StockApi;
 use crate::llm;
-use crate::portfolio::{self, PositionView};
+use crate::portfolio::PositionView;
 use crate::spec;
 
 #[derive(Debug, Serialize)]
@@ -116,7 +115,7 @@ impl WorkflowReport {
 const VALID_SKIP_STEPS: &[&str] = &["discover", "scan", "fetch"];
 
 pub async fn run(
-    conn: &Connection,
+    conn: &dyn DbClient,
     config: &AppConfig,
     stock_api: &dyn StockApi,
     skip: &[String],
@@ -135,7 +134,7 @@ pub async fn run(
 
     step_discover(&mut report, conn, config, skip).await;
 
-    let watchlist = db::watchlist_list(conn).await?;
+    let watchlist = conn.watchlist_list().await?;
     if watchlist.is_empty() {
         info!("Watchlist is empty, nothing to process");
         return Ok(report);
@@ -154,7 +153,7 @@ pub async fn run(
 
 async fn step_discover(
     report: &mut WorkflowReport,
-    conn: &Connection,
+    conn: &dyn DbClient,
     config: &AppConfig,
     skip: &[String],
 ) {
@@ -191,7 +190,7 @@ async fn step_discover(
 
 async fn step_scan(
     report: &mut WorkflowReport,
-    conn: &Connection,
+    conn: &dyn DbClient,
     stock_api: &dyn StockApi,
     watchlist: &[WatchlistItem],
     skip: &[String],
@@ -206,7 +205,7 @@ async fn step_scan(
 
     info!(count = watchlist.len(), "Workflow: running scan step");
 
-    if !db::has_any_stocks(conn).await? {
+    if !conn.has_any_stocks().await? {
         info!("Stock master empty, refreshing from J-Quants API");
         if let Err(e) = refresh_stock_master(conn, stock_api).await {
             warn!(error = %e, "Failed to refresh stock master");
@@ -235,7 +234,7 @@ async fn step_scan(
 
 async fn step_fetch(
     report: &mut WorkflowReport,
-    conn: &Connection,
+    conn: &dyn DbClient,
     config: &AppConfig,
     watchlist: &[WatchlistItem],
     skip: &[String],
@@ -277,7 +276,7 @@ async fn step_fetch(
 
 async fn step_eval(
     report: &mut WorkflowReport,
-    conn: &Connection,
+    conn: &dyn DbClient,
     config: &AppConfig,
     watchlist: &[WatchlistItem],
 ) -> Result<()> {
@@ -297,13 +296,13 @@ async fn step_eval(
     let spec_section = loaded_spec.as_ref().map(|s| s.to_prompt_section());
     let spec_hash_val = spec::spec_hash(&config.spec.path).ok();
     let budget_initial_cash = loaded_spec.as_ref().and_then(|s| s.budget_initial_cash());
-    let positions = portfolio::list_positions(conn).await?;
+    let positions = conn.list_positions().await?;
     let held_tickers: std::collections::HashSet<String> =
         positions.iter().map(|p| p.ticker.clone()).collect();
 
     let budget_context = match budget_initial_cash {
         Some(initial_cash) => {
-            let cash_summary = db::trade_cash_summary(conn).await?;
+            let cash_summary = conn.trade_cash_summary().await?;
             Some(spec::build_budget_context(
                 initial_cash,
                 cash_summary.total_invested,
@@ -340,71 +339,73 @@ async fn step_eval(
 
 // ─── Per-stock operations ───────────────────────────────────────────
 
-async fn refresh_stock_master(conn: &Connection, stock_api: &dyn StockApi) -> Result<()> {
+async fn refresh_stock_master(conn: &dyn DbClient, stock_api: &dyn StockApi) -> Result<()> {
     let stocks = stock_api.get_all_stock_info().await?;
-    db::save_stocks_bulk(conn, &stocks).await?;
+    conn.save_stocks_bulk(&stocks).await?;
     Ok(())
 }
 
 async fn scan_single_stock(
-    conn: &Connection,
+    conn: &dyn DbClient,
     stock_api: &dyn StockApi,
     ticker: &str,
     from_date: &str,
     to_date: &str,
 ) -> Result<()> {
-    let stock_id = db::get_stock_id(conn, ticker)
+    let stock_id = conn
+        .get_stock_id(ticker)
         .await?
         .ok_or_else(|| anyhow::anyhow!("Stock not found in master data"))?;
     let quotes = stock_api
         .get_daily_quotes(ticker, from_date, to_date)
         .await?;
-    db::save_prices(conn, stock_id, &quotes).await?;
+    conn.save_prices(stock_id, &quotes).await?;
     info!(ticker = %ticker, count = quotes.len(), "Scan complete");
     Ok(())
 }
 
 async fn fetch_single_stock(
-    conn: &Connection,
+    conn: &dyn DbClient,
     backend: &dyn llm::LlmBackend,
     ticker: &str,
     name: &str,
     llm_backend_name: &str,
 ) -> Result<()> {
-    let stock_id = db::get_stock_id(conn, ticker)
+    let stock_id = conn
+        .get_stock_id(ticker)
         .await?
         .ok_or_else(|| anyhow::anyhow!("Stock not found"))?;
     let prompt = fetch::build_fetch_prompt(ticker, name);
     let response_text = backend.send_message(&prompt, 8192, None).await?;
 
-    if let Err(e) = db::save_llm_log(
-        conn,
-        "fetch",
-        Some(ticker),
-        llm_backend_name,
-        None,
-        None,
-        &prompt,
-        &response_text,
-    )
-    .await
+    if let Err(e) = conn
+        .save_llm_log(
+            "fetch",
+            Some(ticker),
+            llm_backend_name,
+            None,
+            None,
+            &prompt,
+            &response_text,
+        )
+        .await
     {
         warn!(error = %e, "Failed to save LLM log");
     }
 
     let items = fetch::parse_fetch_response(&response_text)?;
     for fi in &items {
-        if let Err(e) = db::save_fetch_result(
-            conn,
-            stock_id,
-            llm_backend_name,
-            &fi.category,
-            &fi.title,
-            fi.url.as_deref(),
-            fi.body.as_deref(),
-            fi.published_at.as_deref(),
-        )
-        .await
+        if let Err(e) = conn
+            .save_fetch_result(
+                stock_id,
+                llm_backend_name,
+                &fi.category,
+                &fi.title,
+                fi.url.as_deref(),
+                fi.body.as_deref(),
+                fi.published_at.as_deref(),
+            )
+            .await
         {
             warn!(ticker = %ticker, error = %e, "Failed to save fetch result");
         }
@@ -415,7 +416,7 @@ async fn fetch_single_stock(
 
 #[allow(clippy::too_many_arguments)]
 async fn eval_single_stock_full(
-    conn: &Connection,
+    conn: &dyn DbClient,
     backend: &dyn llm::LlmBackend,
     ticker: &str,
     name: &str,
@@ -426,11 +427,12 @@ async fn eval_single_stock_full(
     budget_context: Option<&str>,
     llm_backend_name: &str,
 ) -> Result<()> {
-    let stock_id = db::get_stock_id(conn, ticker)
+    let stock_id = conn
+        .get_stock_id(ticker)
         .await?
         .ok_or_else(|| anyhow::anyhow!("Stock not found"))?;
 
-    let price_data = db::fetch_price_data(conn, stock_id).await?;
+    let price_data = conn.fetch_price_data(stock_id).await?;
     anyhow::ensure!(
         price_data.closes.len() >= 14,
         "Insufficient data for evaluation (need >= 14 days, got {})",
@@ -451,7 +453,7 @@ async fn eval_single_stock_full(
         ta.signals.join(", ")
     };
 
-    let fetch_results = db::get_fetch_results_for_stock(conn, stock_id).await?;
+    let fetch_results = conn.get_fetch_results_for_stock(stock_id).await?;
     let fetch_section = if fetch_results.is_empty() {
         "No recent information available.".to_string()
     } else {
@@ -466,7 +468,8 @@ async fn eval_single_stock_full(
             .join("\n")
     };
 
-    let history_section = db::get_recent_evaluations_by_stock(conn, stock_id, 3)
+    let history_section = conn
+        .get_recent_evaluations_by_stock(stock_id, 3)
         .await?
         .iter()
         .fold(None, |acc, e| {
@@ -523,25 +526,24 @@ async fn eval_single_stock_full(
         )
         .await?;
 
-    if let Err(e) = db::save_llm_log(
-        conn,
-        "eval",
-        Some(ticker),
-        llm_backend_name,
-        None,
-        Some(0.0),
-        &prompt,
-        &response_text,
-    )
-    .await
+    if let Err(e) = conn
+        .save_llm_log(
+            "eval",
+            Some(ticker),
+            llm_backend_name,
+            None,
+            Some(0.0),
+            &prompt,
+            &response_text,
+        )
+        .await
     {
         warn!(error = %e, "Failed to save LLM log");
     }
 
     let eval_response = eval::parse_eval_response(&response_text)?;
 
-    db::save_evaluation(
-        conn,
+    conn.save_evaluation(
         stock_id,
         &eval_response.decision,
         eval_response.score,

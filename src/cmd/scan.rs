@@ -1,10 +1,9 @@
 use anyhow::Result;
 use serde::Serialize;
-use tokio_rusqlite::Connection;
 use tracing::info;
 
 use crate::config::AppConfig;
-use crate::db;
+use crate::db::DbClient;
 use crate::indicators::{self, TechnicalIndicators};
 use crate::jquants::StockApi;
 
@@ -19,7 +18,7 @@ pub struct ScanResult {
 }
 
 pub async fn run(
-    conn: &Connection,
+    conn: &dyn DbClient,
     _config: &AppConfig,
     api: &dyn StockApi,
     days: u32,
@@ -29,15 +28,15 @@ pub async fn run(
     if refresh_master {
         info!("Refreshing stock master data from J-Quants API");
         let all_stocks = api.get_all_stock_info().await?;
-        let count = db::save_stocks_bulk(conn, &all_stocks).await?;
+        let count = conn.save_stocks_bulk(&all_stocks).await?;
         info!(count, "Stock master data refreshed");
-    } else if !db::has_any_stocks(conn).await? {
+    } else if !conn.has_any_stocks().await? {
         anyhow::bail!(
             "stocks テーブルが空です。先に kabu scan --refresh-master を実行してください"
         );
     }
 
-    let watchlist = db::watchlist_list(conn).await?;
+    let watchlist = conn.watchlist_list().await?;
     if watchlist.is_empty() {
         anyhow::bail!("Watchlist is empty. Run kabu discover first.");
     }
@@ -53,7 +52,7 @@ pub async fn run(
 
     for (i, item) in watchlist.iter().enumerate() {
         // Look up stock from DB (populated by --refresh-master)
-        let stock_id = match db::get_stock_id(conn, &item.ticker).await? {
+        let stock_id = match conn.get_stock_id(&item.ticker).await? {
             Some(id) => id,
             None => {
                 tracing::warn!(
@@ -76,7 +75,7 @@ pub async fn run(
         {
             Ok(quotes) => {
                 info!(ticker = %item.ticker, count = quotes.len(), "Saved quotes");
-                db::save_prices(conn, stock_id, &quotes).await?;
+                conn.save_prices(stock_id, &quotes).await?;
             }
             Err(e) => {
                 tracing::warn!(ticker = %item.ticker, error = %e, "Failed to fetch quotes");
@@ -84,7 +83,7 @@ pub async fn run(
             }
         }
 
-        let price_data = db::fetch_price_data(conn, stock_id).await?;
+        let price_data = conn.fetch_price_data(stock_id).await?;
         let data_points = price_data.closes.len();
         let latest_close = price_data.closes.last().copied();
 
@@ -100,7 +99,7 @@ pub async fn run(
         };
 
         // Get stock info from DB
-        let stock_info = db::get_stock_info(conn, stock_id).await?;
+        let stock_info = conn.get_stock_info(stock_id).await?;
 
         results.push(ScanResult {
             ticker: item.ticker.clone(),

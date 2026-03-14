@@ -1,13 +1,12 @@
 use anyhow::Result;
-use tokio_rusqlite::Connection;
 
-use crate::db;
+use crate::db::DbClient;
 
-pub async fn run(conn: &Connection, date: Option<&str>) -> Result<String> {
+pub async fn run(conn: &dyn DbClient, date: Option<&str>) -> Result<String> {
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let date_str = date.unwrap_or(&today);
 
-    let evals = db::get_evaluations_for_date(conn, date_str).await?;
+    let evals = conn.get_evaluations_for_date(date_str).await?;
 
     let mut md = String::new();
     md.push_str(&format!("# Investment Report ({})\n\n", date_str));
@@ -39,8 +38,8 @@ pub async fn run(conn: &Connection, date: Option<&str>) -> Result<String> {
             md.push_str(&format!("- **Rationale**: {}\n", eval.rationale));
 
             // Fetch results for this stock
-            if let Ok(Some(stock_id)) = db::get_stock_id(conn, &eval.ticker).await {
-                let fetch_results = db::get_fetch_results_for_stock(conn, stock_id).await?;
+            if let Ok(Some(stock_id)) = conn.get_stock_id(&eval.ticker).await {
+                let fetch_results = conn.get_fetch_results_for_stock(stock_id).await?;
                 if !fetch_results.is_empty() {
                     md.push_str("\n**Recent Information:**\n\n");
                     for fr in fetch_results.iter().take(5) {

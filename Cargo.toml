@@ -26,6 +26,7 @@ toml = "0.8"
 
 # Database
 rusqlite = { version = "0.37", features = ["bundled"] }
+refinery = { version = "0.9", features = ["rusqlite"] }
 
 # Financial math
 rust_decimal = { version = "1", features = ["serde-with-str"] }

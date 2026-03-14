@@ -1,8 +1,7 @@
 use anyhow::Result;
-use tokio_rusqlite::Connection;
 use tracing::warn;
 
-use crate::db;
+use crate::db::DbClient;
 
 #[derive(Debug)]
 pub struct CircuitBreakerResult {
@@ -10,22 +9,22 @@ pub struct CircuitBreakerResult {
     pub reasons: Vec<String>,
 }
 
-pub async fn check(conn: &Connection) -> Result<CircuitBreakerResult> {
+pub async fn check(conn: &dyn DbClient) -> Result<CircuitBreakerResult> {
     let mut reasons = Vec::new();
 
     // Check for abnormal price movements across watchlist
-    let watchlist = db::watchlist_list(conn).await?;
+    let watchlist = conn.watchlist_list().await?;
 
     let mut crash_count = 0;
     let total = watchlist.len();
 
     for item in &watchlist {
-        let stock_id = match db::get_stock_id(conn, &item.ticker).await? {
+        let stock_id = match conn.get_stock_id(&item.ticker).await? {
             Some(id) => id,
             None => continue,
         };
 
-        let price_data = db::fetch_price_data(conn, stock_id).await?;
+        let price_data = conn.fetch_price_data(stock_id).await?;
         if price_data.closes.len() < 2 {
             continue;
         }

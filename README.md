@@ -323,10 +323,34 @@ just ci             # fmt-check + lint + test
 just --list         # タスク一覧
 ```
 
+## データベースマイグレーション
+
+スキーマ管理には [refinery](https://github.com/rust-db/refinery) を使用しています。
+
+- マイグレーションファイルは `migrations/` ディレクトリに配置
+- 命名規則: `V{番号}__{説明}.sql`（アンダースコア2つ）
+- `init_db()` 起動時に自動適用（`refinery_schema_history` テーブルで適用済みを管理）
+
+### 新しいマイグレーションの追加方法
+
+```sh
+# 例: カラム追加
+echo "ALTER TABLE stocks ADD COLUMN listed_at TEXT;" > migrations/V2__add_listed_at.sql
+
+# ビルド時にコンパイルエラーがないか確認
+just build
+
+# テスト実行で動作確認
+just test
+```
+
+マイグレーションは冪等に書く必要はありません（refinery が適用済みのものをスキップします）。
+テストではインメモリ DB に `V1__initial_schema.sql` を直接実行するため、新しいマイグレーションを追加した場合はテストの `setup_db()` にも反映が必要です。
+
 ## 技術スタック
 
 - **言語**: Rust 2024 edition
-- **DB**: SQLite（tokio-rusqlite, bundled）
+- **DB**: SQLite（tokio-rusqlite, bundled）、マイグレーション管理に refinery
 - **API**: J-Quants V2
 - **LLM**: Anthropic API / Gemini API / Claude CLI / Gemini CLI
 - **証券 API**: 立花証券 e-支店 API v4r8（REQUEST I/F + EVENT I/F WebSocket）

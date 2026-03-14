@@ -1,18 +1,7 @@
-mod circuit_breaker;
-mod cmd;
-mod config;
-mod db;
-mod indicators;
-mod jquants;
-mod llm;
-mod output;
-mod portfolio;
-mod spec;
-mod tachibana;
-
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use output::OutputFormat;
+use kekekabu::output::OutputFormat;
+use kekekabu::{cmd, config, db, jquants, output};
 
 #[derive(Parser)]
 #[command(name = "kabu", about = "JP stock investment CLI")]
@@ -199,29 +188,29 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    let conn = db::init_db().await?;
+    let db = db::SqliteClient::open().await?;
 
     // show subcommands don't need config
     if let Command::Show(sub) = cli.command {
         let format = cli.format;
         match sub {
-            ShowCommand::Watchlist => cmd::show::watchlist(&conn, format).await?,
+            ShowCommand::Watchlist => cmd::show::watchlist(&db, format).await?,
             ShowCommand::Events { ticker } => {
-                cmd::show::events(&conn, ticker.as_deref(), format).await?
+                cmd::show::events(&db, ticker.as_deref(), format).await?
             }
-            ShowCommand::Positions => cmd::show::positions(&conn, format).await?,
+            ShowCommand::Positions => cmd::show::positions(&db, format).await?,
             ShowCommand::Evaluations { limit } => {
-                cmd::show::evaluations(&conn, limit, format).await?
+                cmd::show::evaluations(&db, limit, format).await?
             }
-            ShowCommand::Stocks => cmd::show::stocks(&conn, format).await?,
-            ShowCommand::Tables => cmd::show::tables(&conn, format).await?,
-            ShowCommand::Summary => cmd::show::summary(&conn, format).await?,
-            ShowCommand::Trades { limit } => cmd::show::trades(&conn, limit, format).await?,
+            ShowCommand::Stocks => cmd::show::stocks(&db, format).await?,
+            ShowCommand::Tables => cmd::show::tables(&db, format).await?,
+            ShowCommand::Summary => cmd::show::summary(&db, format).await?,
+            ShowCommand::Trades { limit } => cmd::show::trades(&db, limit, format).await?,
             ShowCommand::LlmLogs { limit, ticker } => {
-                cmd::show::llm_logs(&conn, limit, ticker.as_deref(), format).await?
+                cmd::show::llm_logs(&db, limit, ticker.as_deref(), format).await?
             }
             ShowCommand::Orders { limit, status } => {
-                cmd::show::orders(&conn, limit, status.as_deref(), format).await?
+                cmd::show::orders(&db, limit, status.as_deref(), format).await?
             }
         }
         return Ok(());
@@ -236,7 +225,7 @@ async fn main() -> Result<()> {
                 let api_key =
                     config::AppConfig::require_key(&config.api.jquants_api_key, "JQUANTS_API_KEY")?;
                 let stock_api = jquants::JQuantsClient::new(api_key);
-                let report = cmd::workflow::run(&conn, &config, &stock_api, &skip).await?;
+                let report = cmd::workflow::run(&db, &config, &stock_api, &skip).await?;
                 output::print_output(&report, cli.format);
             }
         }
@@ -248,7 +237,7 @@ async fn main() -> Result<()> {
             unreachable!()
         }
         Command::Discover => {
-            let result = cmd::discover::run(&conn, &config).await?;
+            let result = cmd::discover::run(&db, &config).await?;
             output::print_output(&result, cli.format);
         }
         Command::Scan {
@@ -258,23 +247,23 @@ async fn main() -> Result<()> {
             let api_key =
                 config::AppConfig::require_key(&config.api.jquants_api_key, "JQUANTS_API_KEY")?;
             let stock_api = jquants::JQuantsClient::new(api_key);
-            let results = cmd::scan::run(&conn, &config, &stock_api, days, refresh_master).await?;
+            let results = cmd::scan::run(&db, &config, &stock_api, days, refresh_master).await?;
             output::print_list_output(&results, cli.format);
         }
         Command::Fetch { tickers } => {
-            let results = cmd::fetch::run(&conn, &config, &tickers).await?;
+            let results = cmd::fetch::run(&db, &config, &tickers).await?;
             output::print_list_output(&results, cli.format);
         }
         Command::Eval { tickers } => {
-            let results = cmd::eval::run(&conn, &config, &tickers).await?;
+            let results = cmd::eval::run(&db, &config, &tickers).await?;
             output::print_list_output(&results, cli.format);
         }
         Command::Execute { dry_run } => {
-            let result = cmd::execute::run(&conn, &config, dry_run).await?;
+            let result = cmd::execute::run(&db, &config, dry_run).await?;
             output::print_output(&result, cli.format);
         }
         Command::Report { date, output: out } => {
-            let md = cmd::report::run(&conn, date.as_deref()).await?;
+            let md = cmd::report::run(&db, date.as_deref()).await?;
             if let Some(path) = out {
                 std::fs::write(&path, &md)?;
                 eprintln!("Report written to {}", path);

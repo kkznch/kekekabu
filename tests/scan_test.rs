@@ -1,8 +1,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use kekekabu::config::AppConfig;
+use kekekabu::db::{DbClient, SqliteClient};
 use kekekabu::jquants::{DailyQuote, ListedInfo, StockApi};
-use tokio_rusqlite::Connection;
 
 struct MockStockApi {
     stocks: Vec<ListedInfo>,
@@ -25,10 +25,8 @@ impl StockApi for MockStockApi {
     }
 }
 
-async fn setup_db() -> Result<Connection> {
-    let conn = Connection::open_in_memory().await?;
-    kekekabu::db::create_tables(&conn).await?;
-    Ok(conn)
+async fn setup_db() -> Result<SqliteClient> {
+    SqliteClient::open_in_memory().await
 }
 
 fn make_quotes(code: &str, count: usize) -> Vec<DailyQuote> {
@@ -48,11 +46,11 @@ fn make_quotes(code: &str, count: usize) -> Vec<DailyQuote> {
 
 #[tokio::test]
 async fn test_scan_with_mock_api() -> Result<()> {
-    let conn = setup_db().await?;
+    let db = setup_db().await?;
 
     // Pre-populate stock master and watchlist
-    kekekabu::db::save_stock(&conn, "7203", "Toyota", Some("Automobile")).await?;
-    kekekabu::db::watchlist_add(&conn, "7203", Some("test")).await?;
+    db.save_stock("7203", "Toyota", Some("Automobile")).await?;
+    db.watchlist_add("7203", Some("test")).await?;
 
     let api = MockStockApi {
         stocks: vec![],
@@ -60,7 +58,7 @@ async fn test_scan_with_mock_api() -> Result<()> {
     };
 
     let config = AppConfig::default();
-    let results = kekekabu::cmd::scan::run(&conn, &config, &api, 60, false).await?;
+    let results = kekekabu::cmd::scan::run(&db, &config, &api, 60, false).await?;
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].ticker, "7203");
@@ -73,10 +71,10 @@ async fn test_scan_with_mock_api() -> Result<()> {
 
 #[tokio::test]
 async fn test_scan_with_refresh_master() -> Result<()> {
-    let conn = setup_db().await?;
+    let db = setup_db().await?;
 
     // Add to watchlist but no stock master — refresh_master will populate it
-    kekekabu::db::watchlist_add(&conn, "6758", Some("test")).await?;
+    db.watchlist_add("6758", Some("test")).await?;
 
     let api = MockStockApi {
         stocks: vec![ListedInfo {
@@ -88,7 +86,7 @@ async fn test_scan_with_refresh_master() -> Result<()> {
     };
 
     let config = AppConfig::default();
-    let results = kekekabu::cmd::scan::run(&conn, &config, &api, 60, true).await?;
+    let results = kekekabu::cmd::scan::run(&db, &config, &api, 60, true).await?;
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].ticker, "6758");
@@ -100,10 +98,10 @@ async fn test_scan_with_refresh_master() -> Result<()> {
 
 #[tokio::test]
 async fn test_scan_empty_watchlist_errors() -> Result<()> {
-    let conn = setup_db().await?;
+    let db = setup_db().await?;
 
     // Stock master exists but watchlist is empty
-    kekekabu::db::save_stock(&conn, "7203", "Toyota", None).await?;
+    db.save_stock("7203", "Toyota", None).await?;
 
     let api = MockStockApi {
         stocks: vec![],
@@ -111,7 +109,7 @@ async fn test_scan_empty_watchlist_errors() -> Result<()> {
     };
 
     let config = AppConfig::default();
-    let result = kekekabu::cmd::scan::run(&conn, &config, &api, 60, false).await;
+    let result = kekekabu::cmd::scan::run(&db, &config, &api, 60, false).await;
 
     assert!(result.is_err());
     assert!(

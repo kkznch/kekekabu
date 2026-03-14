@@ -1,76 +1,74 @@
 use anyhow::Result;
-use tokio_rusqlite::Connection;
 
-use crate::db;
+use crate::db::DbClient;
 use crate::output::{self, OutputFormat};
-use crate::portfolio;
 
-pub async fn watchlist(conn: &Connection, format: OutputFormat) -> Result<()> {
-    let items = db::watchlist_list(conn).await?;
+pub async fn watchlist(conn: &dyn DbClient, format: OutputFormat) -> Result<()> {
+    let items = conn.watchlist_list().await?;
     output::print_list_output(&items, format);
     Ok(())
 }
 
-pub async fn events(conn: &Connection, ticker: Option<&str>, format: OutputFormat) -> Result<()> {
-    let events = db::list_watchlist_events(conn, ticker).await?;
+pub async fn events(conn: &dyn DbClient, ticker: Option<&str>, format: OutputFormat) -> Result<()> {
+    let events = conn.list_watchlist_events(ticker).await?;
     output::print_list_output(&events, format);
     Ok(())
 }
 
-pub async fn positions(conn: &Connection, format: OutputFormat) -> Result<()> {
-    let positions = portfolio::list_positions(conn).await?;
+pub async fn positions(conn: &dyn DbClient, format: OutputFormat) -> Result<()> {
+    let positions = conn.list_positions().await?;
     output::print_list_output(&positions, format);
     Ok(())
 }
 
-pub async fn evaluations(conn: &Connection, limit: i64, format: OutputFormat) -> Result<()> {
-    let evals = db::list_evaluations(conn, limit).await?;
+pub async fn evaluations(conn: &dyn DbClient, limit: i64, format: OutputFormat) -> Result<()> {
+    let evals = conn.list_evaluations(limit).await?;
     output::print_list_output(&evals, format);
     Ok(())
 }
 
-pub async fn stocks(conn: &Connection, format: OutputFormat) -> Result<()> {
-    let stocks = db::list_stocks(conn).await?;
+pub async fn stocks(conn: &dyn DbClient, format: OutputFormat) -> Result<()> {
+    let stocks = conn.list_stocks().await?;
     output::print_list_output(&stocks, format);
     Ok(())
 }
 
-pub async fn tables(conn: &Connection, format: OutputFormat) -> Result<()> {
-    let stats = db::table_stats(conn).await?;
+pub async fn tables(conn: &dyn DbClient, format: OutputFormat) -> Result<()> {
+    let stats = conn.table_stats().await?;
     output::print_list_output(&stats, format);
     Ok(())
 }
 
-pub async fn summary(conn: &Connection, format: OutputFormat) -> Result<()> {
-    let sum = portfolio::summary(conn).await?;
+pub async fn summary(conn: &dyn DbClient, format: OutputFormat) -> Result<()> {
+    let sum = conn.portfolio_summary().await?;
     output::print_output(&sum, format);
     Ok(())
 }
 
-pub async fn trades(conn: &Connection, limit: i64, format: OutputFormat) -> Result<()> {
-    let trades = portfolio::trade_history(conn, limit).await?;
+pub async fn trades(conn: &dyn DbClient, limit: i64, format: OutputFormat) -> Result<()> {
+    let trades = conn.trade_history(limit).await?;
     output::print_list_output(&trades, format);
     Ok(())
 }
 
 pub async fn llm_logs(
-    conn: &Connection,
+    conn: &dyn DbClient,
     limit: i64,
     ticker: Option<&str>,
     format: OutputFormat,
 ) -> Result<()> {
-    let logs = db::list_llm_logs(conn, limit, ticker).await?;
+    let logs = conn.list_llm_logs(limit, ticker).await?;
     output::print_list_output(&logs, format);
     Ok(())
 }
 
 pub async fn orders(
-    conn: &Connection,
+    conn: &dyn DbClient,
     limit: i64,
     status: Option<&str>,
     format: OutputFormat,
 ) -> Result<()> {
-    let orders = db::list_orders(conn, limit, status).await?;
+    let orders = conn.list_orders(limit, status).await?;
     output::print_list_output(&orders, format);
     Ok(())
 }

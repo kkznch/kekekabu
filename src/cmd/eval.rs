@@ -1,13 +1,11 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use tokio_rusqlite::Connection;
 use tracing::info;
 
 use crate::config::AppConfig;
-use crate::db;
+use crate::db::DbClient;
 use crate::indicators;
 use crate::llm;
-use crate::portfolio;
 use crate::spec;
 use tracing::warn;
 
@@ -64,7 +62,7 @@ pub(crate) struct PositionInfo {
 }
 
 pub async fn run(
-    conn: &Connection,
+    conn: &dyn DbClient,
     config: &AppConfig,
     tickers: &[String],
 ) -> Result<Vec<EvalResult>> {
@@ -94,8 +92,8 @@ pub async fn run(
 
     // Build budget context if initial_cash is configured
     let budget_context = if let Some(initial_cash) = budget_initial_cash {
-        let cash_summary = db::trade_cash_summary(conn).await?;
-        let positions = portfolio::list_positions(conn).await?;
+        let cash_summary = conn.trade_cash_summary().await?;
+        let positions = conn.list_positions().await?;
         Some(spec::build_budget_context(
             initial_cash,
             cash_summary.total_invested,
@@ -109,7 +107,7 @@ pub async fn run(
     let mut results = Vec::new();
 
     for target in &targets {
-        let price_data = db::fetch_price_data(conn, target.stock_id).await?;
+        let price_data = conn.fetch_price_data(target.stock_id).await?;
         if price_data.closes.len() < 14 {
             tracing::warn!(
                 ticker = %target.ticker,
@@ -134,7 +132,7 @@ pub async fn run(
         };
 
         // Get fetch results if available
-        let fetch_results = db::get_fetch_results_for_stock(conn, target.stock_id).await?;
+        let fetch_results = conn.get_fetch_results_for_stock(target.stock_id).await?;
         let fetch_section = if fetch_results.is_empty() {
             "No recent information available.".to_string()
         } else {
@@ -150,7 +148,9 @@ pub async fn run(
         };
 
         // Get recent evaluation history for this stock
-        let recent_evals = db::get_recent_evaluations_by_stock(conn, target.stock_id, 3).await?;
+        let recent_evals = conn
+            .get_recent_evaluations_by_stock(target.stock_id, 3)
+            .await?;
         let history_section = if recent_evals.is_empty() {
             None
         } else {
@@ -195,25 +195,24 @@ pub async fn run(
             )
             .await?;
 
-        if let Err(e) = db::save_llm_log(
-            conn,
-            "eval",
-            Some(&target.ticker),
-            &config.llm.eval,
-            None,
-            Some(0.0),
-            &prompt,
-            &response_text,
-        )
-        .await
+        if let Err(e) = conn
+            .save_llm_log(
+                "eval",
+                Some(&target.ticker),
+                &config.llm.eval,
+                None,
+                Some(0.0),
+                &prompt,
+                &response_text,
+            )
+            .await
         {
             warn!(error = %e, "Failed to save LLM log");
         }
 
         let eval_response = parse_eval_response(&response_text)?;
 
-        db::save_evaluation(
-            conn,
+        conn.save_evaluation(
             target.stock_id,
             &eval_response.decision,
             eval_response.score,
@@ -246,9 +245,9 @@ pub async fn run(
     Ok(results)
 }
 
-async fn build_eval_targets(conn: &Connection, tickers: &[String]) -> Result<Vec<EvalTarget>> {
-    let watchlist = db::watchlist_list(conn).await?;
-    let positions = portfolio::list_positions(conn).await?;
+async fn build_eval_targets(conn: &dyn DbClient, tickers: &[String]) -> Result<Vec<EvalTarget>> {
+    let watchlist = conn.watchlist_list().await?;
+    let positions = conn.list_positions().await?;
 
     let held_tickers: std::collections::HashSet<String> =
         positions.iter().map(|p| p.ticker.clone()).collect();
@@ -300,7 +299,7 @@ async fn build_eval_targets(conn: &Connection, tickers: &[String]) -> Result<Vec
             continue;
         }
 
-        let stock_id = match db::get_stock_id(conn, &pos.ticker).await? {
+        let stock_id = match conn.get_stock_id(&pos.ticker).await? {
             Some(id) => id,
             None => continue,
         };

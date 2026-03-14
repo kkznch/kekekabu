@@ -1,4 +1,3 @@
-pub const CREATE_STOCKS_TABLE: &str = "
 CREATE TABLE IF NOT EXISTS stocks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ticker TEXT NOT NULL UNIQUE,
@@ -8,9 +7,7 @@ CREATE TABLE IF NOT EXISTS stocks (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-";
 
-pub const CREATE_PRICES_TABLE: &str = "
 CREATE TABLE IF NOT EXISTS prices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     stock_id INTEGER NOT NULL REFERENCES stocks(id),
@@ -24,18 +21,14 @@ CREATE TABLE IF NOT EXISTS prices (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(stock_id, date)
 );
-";
 
-pub const CREATE_WATCHLIST_TABLE: &str = "
 CREATE TABLE IF NOT EXISTS watchlist (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     stock_id INTEGER NOT NULL REFERENCES stocks(id) UNIQUE,
     added_at TEXT NOT NULL DEFAULT (datetime('now')),
     notes TEXT
 );
-";
 
-pub const CREATE_EVALUATIONS_TABLE: &str = "
 CREATE TABLE IF NOT EXISTS evaluations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     stock_id INTEGER NOT NULL REFERENCES stocks(id),
@@ -48,9 +41,7 @@ CREATE TABLE IF NOT EXISTS evaluations (
     llm_backend TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-";
 
-pub const CREATE_FETCH_RESULTS_TABLE: &str = "
 CREATE TABLE IF NOT EXISTS fetch_results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     stock_id INTEGER NOT NULL REFERENCES stocks(id),
@@ -63,9 +54,7 @@ CREATE TABLE IF NOT EXISTS fetch_results (
     fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(stock_id, url)
 );
-";
 
-pub const CREATE_PORTFOLIO_POSITIONS_TABLE: &str = "
 CREATE TABLE IF NOT EXISTS portfolio_positions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     stock_id INTEGER NOT NULL REFERENCES stocks(id) UNIQUE,
@@ -76,9 +65,7 @@ CREATE TABLE IF NOT EXISTS portfolio_positions (
     opened_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-";
 
-pub const CREATE_TRADES_TABLE: &str = "
 CREATE TABLE IF NOT EXISTS trades (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     stock_id INTEGER NOT NULL REFERENCES stocks(id),
@@ -92,9 +79,7 @@ CREATE TABLE IF NOT EXISTS trades (
     stop_loss_price TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-";
 
-pub const CREATE_WATCHLIST_EVENTS_TABLE: &str = "
 CREATE TABLE IF NOT EXISTS watchlist_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ticker TEXT NOT NULL,
@@ -102,9 +87,7 @@ CREATE TABLE IF NOT EXISTS watchlist_events (
     reason TEXT,
     discovered_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-";
 
-pub const CREATE_LLM_LOGS_TABLE: &str = "
 CREATE TABLE IF NOT EXISTS llm_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     command TEXT NOT NULL,
@@ -116,9 +99,7 @@ CREATE TABLE IF NOT EXISTS llm_logs (
     response TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-";
 
-pub const CREATE_ORDERS_TABLE: &str = "
 CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     stock_id INTEGER NOT NULL REFERENCES stocks(id),
@@ -137,17 +118,3 @@ CREATE TABLE IF NOT EXISTS orders (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-";
-
-pub const ALL_SCHEMAS: &[&str] = &[
-    CREATE_STOCKS_TABLE,
-    CREATE_PRICES_TABLE,
-    CREATE_WATCHLIST_TABLE,
-    CREATE_EVALUATIONS_TABLE,
-    CREATE_FETCH_RESULTS_TABLE,
-    CREATE_PORTFOLIO_POSITIONS_TABLE,
-    CREATE_TRADES_TABLE,
-    CREATE_WATCHLIST_EVENTS_TABLE,
-    CREATE_LLM_LOGS_TABLE,
-    CREATE_ORDERS_TABLE,
-];

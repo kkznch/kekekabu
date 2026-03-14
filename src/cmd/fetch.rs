@@ -1,10 +1,9 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use tokio_rusqlite::Connection;
 use tracing::{info, warn};
 
 use crate::config::AppConfig;
-use crate::db;
+use crate::db::DbClient;
 use crate::llm;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -32,7 +31,7 @@ pub struct FetchSummary {
 }
 
 pub async fn run(
-    conn: &Connection,
+    conn: &dyn DbClient,
     config: &AppConfig,
     tickers: &[String],
 ) -> Result<Vec<FetchSummary>> {
@@ -42,7 +41,7 @@ pub async fn run(
         config.llm.fetch_model.as_deref(),
     )?;
 
-    let watchlist = db::watchlist_list(conn).await?;
+    let watchlist = conn.watchlist_list().await?;
     let targets: Vec<_> = if tickers.is_empty() {
         watchlist
     } else {
@@ -59,7 +58,7 @@ pub async fn run(
     let mut results = Vec::new();
 
     for item in &targets {
-        let stock_id = match db::get_stock_id(conn, &item.ticker).await? {
+        let stock_id = match conn.get_stock_id(&item.ticker).await? {
             Some(id) => id,
             None => {
                 tracing::warn!(ticker = %item.ticker, "Stock not found in DB, skipping");
@@ -73,17 +72,17 @@ pub async fn run(
 
         let response_text = backend.send_message(&prompt, 8192, None).await?;
 
-        if let Err(e) = db::save_llm_log(
-            conn,
-            "fetch",
-            Some(&item.ticker),
-            &config.llm.fetch,
-            None,
-            None,
-            &prompt,
-            &response_text,
-        )
-        .await
+        if let Err(e) = conn
+            .save_llm_log(
+                "fetch",
+                Some(&item.ticker),
+                &config.llm.fetch,
+                None,
+                None,
+                &prompt,
+                &response_text,
+            )
+            .await
         {
             warn!(error = %e, "Failed to save LLM log");
         }
@@ -92,8 +91,7 @@ pub async fn run(
 
         let mut saved_count = 0;
         for fi in &items {
-            db::save_fetch_result(
-                conn,
+            conn.save_fetch_result(
                 stock_id,
                 &config.llm.fetch,
                 &fi.category,

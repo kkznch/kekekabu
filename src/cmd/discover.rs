@@ -1,12 +1,10 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use tokio_rusqlite::Connection;
 use tracing::{info, warn};
 
 use crate::config::AppConfig;
-use crate::db;
+use crate::db::DbClient;
 use crate::llm;
-use crate::portfolio;
 use crate::spec;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -35,7 +33,7 @@ pub struct DiscoverResult {
     pub kept: Vec<String>,
 }
 
-pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult> {
+pub async fn run(conn: &dyn DbClient, config: &AppConfig) -> Result<DiscoverResult> {
     let backend = llm::create_backend(
         &config.llm.fetch,
         &config.api,
@@ -54,8 +52,8 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
 
     // Build budget context if initial_cash is configured
     let budget_context = if let Some(initial_cash) = budget_initial_cash {
-        let cash_summary = db::trade_cash_summary(conn).await?;
-        let positions = portfolio::list_positions(conn).await?;
+        let cash_summary = conn.trade_cash_summary().await?;
+        let positions = conn.list_positions().await?;
         Some(spec::build_budget_context(
             initial_cash,
             cash_summary.total_invested,
@@ -67,7 +65,7 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
     };
 
     // Build watchlist context from current watchlist
-    let current_watchlist = db::watchlist_list(conn).await?;
+    let current_watchlist = conn.watchlist_list().await?;
     let watchlist_context = if current_watchlist.is_empty() {
         None
     } else {
@@ -97,17 +95,17 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
         )
         .await?;
 
-    if let Err(e) = db::save_llm_log(
-        conn,
-        "discover",
-        None,
-        &config.llm.fetch,
-        None,
-        None,
-        &prompt,
-        &response_text,
-    )
-    .await
+    if let Err(e) = conn
+        .save_llm_log(
+            "discover",
+            None,
+            &config.llm.fetch,
+            None,
+            None,
+            &prompt,
+            &response_text,
+        )
+        .await
     {
         warn!(error = %e, "Failed to save LLM log");
     }
@@ -132,7 +130,7 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
     }
 
     // Get held tickers to protect from removal
-    let positions = portfolio::list_positions(conn).await?;
+    let positions = conn.list_positions().await?;
     let held_tickers: std::collections::HashSet<String> =
         positions.iter().map(|p| p.ticker.clone()).collect();
 
@@ -147,15 +145,16 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
             continue;
         }
         if !action.name.is_empty() {
-            db::save_stock(conn, &action.ticker, &action.name, None).await?;
+            conn.save_stock(&action.ticker, &action.name, None).await?;
         }
         let notes = if action.reason.is_empty() {
             None
         } else {
             Some(action.reason.as_str())
         };
-        db::watchlist_add(conn, &action.ticker, notes).await?;
-        db::save_watchlist_event(conn, &action.ticker, "add", Some(&action.reason)).await?;
+        conn.watchlist_add(&action.ticker, notes).await?;
+        conn.save_watchlist_event(&action.ticker, "add", Some(&action.reason))
+            .await?;
         info!(ticker = %action.ticker, name = %action.name, "Added to watchlist");
         added.push(action.ticker.clone());
     }
@@ -173,12 +172,13 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
         }
         if held_tickers.contains(&action.ticker) {
             info!(ticker = %action.ticker, "Kept in watchlist (has active position)");
-            db::save_watchlist_event(conn, &action.ticker, "keep", Some("has active position"))
+            conn.save_watchlist_event(&action.ticker, "keep", Some("has active position"))
                 .await?;
             kept.push(action.ticker.clone());
         } else {
-            db::watchlist_remove(conn, &action.ticker).await?;
-            db::save_watchlist_event(conn, &action.ticker, "remove", Some(&action.reason)).await?;
+            conn.watchlist_remove(&action.ticker).await?;
+            conn.save_watchlist_event(&action.ticker, "remove", Some(&action.reason))
+                .await?;
             info!(ticker = %action.ticker, "Removed from watchlist");
             removed.push(action.ticker.clone());
         }
@@ -193,7 +193,8 @@ pub async fn run(conn: &Connection, config: &AppConfig) -> Result<DiscoverResult
             warn!(ticker = %action.ticker, "Invalid ticker format, skipping");
             continue;
         }
-        db::save_watchlist_event(conn, &action.ticker, "keep", Some(&action.reason)).await?;
+        conn.save_watchlist_event(&action.ticker, "keep", Some(&action.reason))
+            .await?;
         kept.push(action.ticker.clone());
     }
 

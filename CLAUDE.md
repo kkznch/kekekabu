@@ -20,7 +20,8 @@ src/
   output.rs          JSON (default) / human output formatting
   portfolio.rs       Portfolio management (buy/sell, weighted avg cost, P&L)
   circuit_breaker.rs Safety checks (abnormal price moves, market-wide crash)
-  spec.rs            Investment Spec TOML loader + SHA256 hashing
+  notification.rs    Webhook notification (Slack/Discord/LINE via webhook_url)
+  spec.rs            Investment Spec TOML loader + SHA256 hashing + execution params
   db/
     mod.rs           SQLite operations (10 tables)
     schema.rs        Table definitions
@@ -39,7 +40,7 @@ src/
     scan.rs          J-Quants fetch + TA indicators
     fetch.rs         Gemini info gathering (news, disclosure, sentiment)
     eval.rs          LLM investment evaluation (Hunting: Buy/Avoid, Farming: Hold/Sell) + history injection
-    execute.rs       Trade execution (settle + circuit breaker + orders via Tachibana API)
+    execute.rs       Trade execution (settle + circuit breaker + hard stop-loss + max exposure + orders via Tachibana API)
     report.rs        Markdown report generation
     show.rs          DB viewer (watchlist, events, positions, evaluations, stocks, tables, summary, trades, orders)
     config.rs        Config init + validate handlers
@@ -54,6 +55,8 @@ src/
 - **Default JSON output** — `--format human` for table display
 - **Logs to stderr** — structured via `tracing`, so stdout is clean JSON
 - **Circuit breaker** — blocks execute on >30% individual stock moves or >50% market decline
+- **Hard stop-loss** — rule-based forced sell when position loss exceeds spec's `stop_loss` threshold (LLM-independent)
+- **Max exposure** — rejects buy orders exceeding spec's `max_position_size` × `initial_cash`
 - **Eval history** — injects last 3 evaluations per stock into LLM prompt to prevent flip-flopping
 - **Watchlist auto-cleanup** — auto-removes stock from watchlist when position is fully sold
 - **Order idempotency** — `request_id` UNIQUE constraint prevents duplicate orders per evaluation
@@ -124,7 +127,7 @@ kabu report -o ~/reports/$(date +%Y-%m-%d).md
 ```sh
 aqua install                         # Install tools (just, etc.)
 just build                           # Build
-just test                            # Run all tests (40 tests, in-memory SQLite)
+just test                            # Run all tests (116 tests, in-memory SQLite)
 just lint                            # Clippy lints
 just ci                              # fmt-check + lint + test
 just --list                          # Show all available tasks

@@ -1,10 +1,13 @@
 use anyhow::Result;
+use rust_decimal::Decimal;
 use serde::Serialize;
+use std::str::FromStr;
 use tracing::{info, warn};
 
 use crate::circuit_breaker;
 use crate::config::AppConfig;
 use crate::db::{DbClient, FillParams};
+use crate::spec::InvestmentSpec;
 use crate::tachibana::TachibanaClient;
 use crate::tachibana::order::map_status_code;
 
@@ -13,8 +16,20 @@ pub struct ExecuteResult {
     pub actions: Vec<ExecuteAction>,
     pub circuit_breaker_triggered: bool,
     pub circuit_breaker_reasons: Vec<String>,
+    pub hard_stop_loss_actions: Vec<HardStopLossAction>,
     pub settle_results: Vec<SettleResult>,
     pub order_results: Vec<OrderResult>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct HardStopLossAction {
+    pub ticker: String,
+    pub name: String,
+    pub avg_cost: String,
+    pub current_price: String,
+    pub loss_pct: String,
+    pub threshold: String,
+    pub action: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -47,9 +62,15 @@ pub struct OrderResult {
     pub status: String,
 }
 
-pub async fn run(conn: &dyn DbClient, config: &AppConfig, dry_run: bool) -> Result<ExecuteResult> {
+pub async fn run(
+    conn: &dyn DbClient,
+    config: &AppConfig,
+    spec: &InvestmentSpec,
+    dry_run: bool,
+) -> Result<ExecuteResult> {
     let mut settle_results = Vec::new();
     let mut order_results = Vec::new();
+    let mut hard_stop_loss_actions = Vec::new();
 
     // Build Tachibana client if non-dry-run
     let mut client = if !dry_run {
@@ -160,15 +181,68 @@ pub async fn run(conn: &dyn DbClient, config: &AppConfig, dry_run: bool) -> Resu
             actions: vec![],
             circuit_breaker_triggered: true,
             circuit_breaker_reasons: cb.reasons,
+            hard_stop_loss_actions: vec![],
             settle_results,
             order_results,
         });
     }
 
-    // ── Phase 3: Get today's evaluations and generate signals ──
+    // ── Phase 3: Hard stop-loss check (rule-based, independent of LLM) ──
+    let positions = conn.list_positions().await?;
+    let stop_loss_threshold = spec.execution_stop_loss();
+
+    if let Some(threshold) = stop_loss_threshold {
+        for pos in &positions {
+            let loss_pct = match pos.unrealized_pnl_pct {
+                Some(pct) => pct,
+                None => continue,
+            };
+
+            // threshold is e.g. -0.07, loss_pct is e.g. -8.5 (percentage)
+            // Convert threshold to percentage for comparison: -0.07 → -7.0
+            let threshold_pct =
+                Decimal::from_str(&format!("{}", threshold * 100.0)).unwrap_or_default();
+
+            if loss_pct <= threshold_pct {
+                warn!(
+                    ticker = %pos.ticker,
+                    loss_pct = %loss_pct,
+                    threshold = %threshold_pct,
+                    "HARD STOP-LOSS triggered — forced sell"
+                );
+
+                let action_str = if dry_run {
+                    format!(
+                        "[DRY RUN] Would force-sell {} (loss: {}%, threshold: {}%)",
+                        pos.ticker, loss_pct, threshold_pct
+                    )
+                } else {
+                    format!(
+                        "Force-sell {} (loss: {}%, threshold: {}%)",
+                        pos.ticker, loss_pct, threshold_pct
+                    )
+                };
+
+                hard_stop_loss_actions.push(HardStopLossAction {
+                    ticker: pos.ticker.clone(),
+                    name: pos.name.clone(),
+                    avg_cost: pos.avg_cost.to_string(),
+                    current_price: pos.current_price.map(|p| p.to_string()).unwrap_or_default(),
+                    loss_pct: loss_pct.to_string(),
+                    threshold: threshold_pct.to_string(),
+                    action: action_str,
+                });
+
+                // Generate forced sell signal (non-dry-run only, handled in Phase 5)
+                // Signals are injected below after eval signals
+            }
+        }
+    }
+
+    // ── Phase 4: Get today's evaluations and generate signals ──
     let evals = conn.get_latest_evaluations_for_today().await?;
-    if evals.is_empty() {
-        info!("No evaluations for today. Nothing to execute.");
+    if evals.is_empty() && hard_stop_loss_actions.is_empty() {
+        info!("No evaluations for today and no stop-loss triggers. Nothing to execute.");
         if let Some(ref mut client) = client {
             let _ = client.logout().await;
         }
@@ -176,20 +250,35 @@ pub async fn run(conn: &dyn DbClient, config: &AppConfig, dry_run: bool) -> Resu
             actions: vec![],
             circuit_breaker_triggered: false,
             circuit_breaker_reasons: vec![],
+            hard_stop_loss_actions,
             settle_results,
             order_results,
         });
     }
 
-    let positions = conn.list_positions().await?;
     let held_tickers: std::collections::HashSet<String> =
         positions.iter().map(|p| p.ticker.clone()).collect();
+
+    // Pre-compute stop-loss tickers for blocking conflicting buy signals
+    let stop_loss_tickers: std::collections::HashSet<String> = hard_stop_loss_actions
+        .iter()
+        .map(|a| a.ticker.clone())
+        .collect();
 
     let mut actions = Vec::new();
     let mut signals: Vec<Signal> = Vec::new();
 
     for eval in &evals {
         let (action_type, detail, signal) = match eval.decision.as_str() {
+            // Block buy signals for tickers being force-sold by stop-loss
+            "Buy" if stop_loss_tickers.contains(&eval.ticker) => (
+                "blocked_by_stop_loss",
+                format!(
+                    "Buy signal for {} blocked — hard stop-loss active",
+                    eval.ticker
+                ),
+                None,
+            ),
             "Buy" if eval.score >= 70 => {
                 // Idempotency check
                 if conn.order_exists_for_evaluation(eval.id, "buy").await? {
@@ -223,6 +312,7 @@ pub async fn run(conn: &dyn DbClient, config: &AppConfig, dry_run: bool) -> Resu
                             ticker: eval.ticker.clone(),
                             side: "buy".to_string(),
                             eval_id: eval.id,
+                            force_market: false,
                         }),
                     )
                 }
@@ -267,6 +357,7 @@ pub async fn run(conn: &dyn DbClient, config: &AppConfig, dry_run: bool) -> Resu
                             ticker: eval.ticker.clone(),
                             side: "sell".to_string(),
                             eval_id: eval.id,
+                            force_market: false,
                         }),
                     )
                 }
@@ -308,7 +399,33 @@ pub async fn run(conn: &dyn DbClient, config: &AppConfig, dry_run: bool) -> Resu
         }
     }
 
-    // ── Phase 4: Place orders (non-dry-run only) ──
+    // ── Phase 5: Inject hard stop-loss forced sell signals ──
+    // Stop-loss sells are eval-independent (eval_id = 0) and use market order semantics
+    if !dry_run {
+        for sl in &hard_stop_loss_actions {
+            // Skip if an eval-based sell signal already exists for this ticker
+            if signals
+                .iter()
+                .any(|s| s.ticker == sl.ticker && s.side == "sell")
+            {
+                info!(
+                    ticker = %sl.ticker,
+                    "Eval already generated sell signal, skipping stop-loss forced sell"
+                );
+                continue;
+            }
+            signals.push(Signal {
+                ticker: sl.ticker.clone(),
+                side: "sell".to_string(),
+                eval_id: 0, // 0 indicates rule-based, not eval-based
+                force_market: true,
+            });
+        }
+    }
+
+    // ── Phase 6: Place orders (non-dry-run only) ──
+    let max_position_size = spec.execution_max_position_size();
+    let initial_cash = spec.budget_initial_cash();
     let mut new_tachibana_order_ids: Vec<String> = Vec::new();
 
     if !dry_run && !signals.is_empty() {
@@ -328,7 +445,14 @@ pub async fn run(conn: &dyn DbClient, config: &AppConfig, dry_run: bool) -> Resu
                 warn!(ticker = %sig.ticker, "No price data available, skipping order");
                 continue;
             }
-            let price_str = format!("{:.0}", last_close);
+
+            // Stop-loss sells use market order (price "0" signals market order to Tachibana)
+            let use_market = sig.force_market;
+            let price_str = if use_market {
+                "0".to_string()
+            } else {
+                format!("{:.0}", last_close)
+            };
 
             // For sell: use position quantity. For buy: 100 shares (単元株)
             let quantity = if sig.side == "sell" {
@@ -341,20 +465,61 @@ pub async fn run(conn: &dyn DbClient, config: &AppConfig, dry_run: bool) -> Resu
                 "100".to_string()
             };
 
+            // Max position size check for buy orders
+            if sig.side == "buy"
+                && let (Some(max_size), Some(cash)) = (max_position_size, initial_cash)
+            {
+                let order_value = last_close * quantity.parse::<f64>().unwrap_or(100.0);
+                let max_allowed = cash * max_size;
+                if order_value > max_allowed {
+                    warn!(
+                        ticker = %sig.ticker,
+                        order_value,
+                        max_allowed,
+                        max_position_size = max_size,
+                        "Buy order exceeds max position size, rejecting"
+                    );
+                    order_results.push(OrderResult {
+                        ticker: sig.ticker.clone(),
+                        side: sig.side.clone(),
+                        price: price_str,
+                        quantity,
+                        tachibana_order_id: None,
+                        status: format!(
+                            "rejected: exceeds max position size ({:.0} > {:.0})",
+                            order_value, max_allowed
+                        ),
+                    });
+                    continue;
+                }
+            }
+
             // Idempotent request_id
             let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-            let request_id = format!("{}-{}-{}-{}", today, sig.ticker, sig.side, sig.eval_id);
+            let request_id = if sig.eval_id == 0 {
+                // Stop-loss: use special prefix to avoid collision with eval-based orders
+                format!("{}-{}-{}-stoploss", today, sig.ticker, sig.side)
+            } else {
+                format!("{}-{}-{}-{}", today, sig.ticker, sig.side, sig.eval_id)
+            };
+
+            let order_type = if use_market { "market" } else { "limit" };
 
             // Save order to DB first (idempotent)
+            let eval_id_opt = if sig.eval_id == 0 {
+                None
+            } else {
+                Some(sig.eval_id)
+            };
             let order_id = conn
                 .save_order(
                     stock_id,
                     &sig.side,
-                    "limit",
+                    order_type,
                     &price_str,
                     &quantity,
                     &request_id,
-                    Some(sig.eval_id),
+                    eval_id_opt,
                 )
                 .await?;
 
@@ -412,7 +577,7 @@ pub async fn run(conn: &dyn DbClient, config: &AppConfig, dry_run: bool) -> Resu
         }
     }
 
-    // ── Phase 5: Short WebSocket fill wait ──
+    // ── Phase 7: Short WebSocket fill wait ──
     if !dry_run
         && !new_tachibana_order_ids.is_empty()
         && let Some(ref client) = client
@@ -471,7 +636,7 @@ pub async fn run(conn: &dyn DbClient, config: &AppConfig, dry_run: bool) -> Resu
         }
     }
 
-    // ── Phase 6: Logout ──
+    // ── Phase 8: Logout ──
     if let Some(ref mut client) = client {
         let _ = client.logout().await;
     }
@@ -480,6 +645,7 @@ pub async fn run(conn: &dyn DbClient, config: &AppConfig, dry_run: bool) -> Resu
         actions,
         circuit_breaker_triggered: false,
         circuit_breaker_reasons: vec![],
+        hard_stop_loss_actions,
         settle_results,
         order_results,
     })
@@ -490,4 +656,6 @@ struct Signal {
     ticker: String,
     side: String,
     eval_id: i64,
+    /// Use market order (for hard stop-loss sells).
+    force_market: bool,
 }

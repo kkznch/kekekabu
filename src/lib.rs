@@ -5,6 +5,7 @@ pub mod db;
 pub mod indicators;
 pub mod jquants;
 pub mod llm;
+pub mod notification;
 pub mod output;
 pub mod portfolio;
 pub mod spec;

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use kekekabu::output::OutputFormat;
-use kekekabu::{cmd, config, db, jquants, output};
+use kekekabu::{cmd, config, db, jquants, output, spec};
 
 #[derive(Parser)]
 #[command(name = "kabu", about = "JP stock investment CLI")]
@@ -290,7 +290,8 @@ async fn main() -> Result<()> {
             output::print_list_output(&results, cli.format);
         }
         Command::Execute { dry_run } => {
-            let result = cmd::execute::run(&db, &config, dry_run).await?;
+            let investment_spec = spec::load_spec(&config.spec.path)?;
+            let result = cmd::execute::run(&db, &config, &investment_spec, dry_run).await?;
             output::print_output(&result, cli.format);
         }
         Command::Report { date, output: out } => {

@@ -341,10 +341,13 @@ impl SqliteClient {
     pub async fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory().await?;
         conn.call(|conn| {
-            conn.execute_batch(include_str!("../../migrations/V1__initial_schema.sql"))?;
+            embedded::migrations::runner()
+                .run(conn)
+                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
             Ok::<(), rusqlite::Error>(())
         })
-        .await?;
+        .await
+        .context("Failed to run migrations on in-memory DB")?;
         Ok(Self { conn })
     }
 

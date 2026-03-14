@@ -68,6 +68,24 @@ impl InvestmentSpec {
             .and_then(|t| t.get("initial_cash"))
             .and_then(|v| v.as_float().or_else(|| v.as_integer().map(|i| i as f64)))
     }
+
+    /// Returns `[execution].stop_loss` (e.g. -0.07 for -7%).
+    pub fn execution_stop_loss(&self) -> Option<f64> {
+        self.execution_float("stop_loss")
+    }
+
+    /// Returns `[execution].max_position_size` (e.g. 0.05 for 5%).
+    pub fn execution_max_position_size(&self) -> Option<f64> {
+        self.execution_float("max_position_size")
+    }
+
+    fn execution_float(&self, key: &str) -> Option<f64> {
+        self.table
+            .get("execution")
+            .and_then(|v| v.as_table())
+            .and_then(|t| t.get(key))
+            .and_then(|v| v.as_float().or_else(|| v.as_integer().map(|i| i as f64)))
+    }
 }
 
 pub fn build_budget_context(
@@ -223,5 +241,42 @@ max_position_size = 0.05
         let table: toml::Table = toml::from_str(toml_str).unwrap();
         let name = table.get("name").unwrap().as_str().unwrap();
         assert_eq!(name, "Custom Strategy");
+    }
+
+    #[test]
+    fn test_execution_stop_loss() {
+        let raw = "name = \"Test\"\n[execution]\nstop_loss = -0.07\n";
+        let table: toml::Table = toml::from_str(raw).unwrap();
+        let spec = InvestmentSpec {
+            name: "Test".to_string(),
+            raw_content: raw.to_string(),
+            table,
+        };
+        assert_eq!(spec.execution_stop_loss(), Some(-0.07));
+    }
+
+    #[test]
+    fn test_execution_max_position_size() {
+        let raw = "name = \"Test\"\n[execution]\nmax_position_size = 0.05\n";
+        let table: toml::Table = toml::from_str(raw).unwrap();
+        let spec = InvestmentSpec {
+            name: "Test".to_string(),
+            raw_content: raw.to_string(),
+            table,
+        };
+        assert_eq!(spec.execution_max_position_size(), Some(0.05));
+    }
+
+    #[test]
+    fn test_execution_params_absent() {
+        let raw = "name = \"Test\"\n";
+        let table: toml::Table = toml::from_str(raw).unwrap();
+        let spec = InvestmentSpec {
+            name: "Test".to_string(),
+            raw_content: raw.to_string(),
+            table,
+        };
+        assert_eq!(spec.execution_stop_loss(), None);
+        assert_eq!(spec.execution_max_position_size(), None);
     }
 }

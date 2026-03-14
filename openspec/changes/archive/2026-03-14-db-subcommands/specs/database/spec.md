@@ -1,0 +1,20 @@
+## MODIFIED Requirements
+
+### Requirement: SQLite を使った10テーブル構成のデータベース
+システムは SHALL SQLite（tokio-rusqlite, bundled）を使用し、stocks, prices, watchlist, evaluations, fetch_results, portfolio_positions, trades, watchlist_events, llm_logs, orders の10テーブルを管理する。DB アクセスは `DbClient` trait を通じて行い、`SqliteClient` が実装を提供する。スキーマは refinery マイグレーション（`migrations/` ディレクトリ）で管理する。`db_path()` 関数を `pub` で公開し、DB ファイルパスを外部から取得可能にする。`SqliteClient` は `migration_status()` メソッドで適用済みマイグレーション情報（`MigrationInfo`）を提供する。
+
+#### Scenario: データベース初期化
+- **WHEN** アプリケーション起動時（`SqliteClient::open()` 呼び出し時）
+- **THEN** ~/.config/kabu/kekekabu.db にデータベースファイルを作成し、refinery マイグレーションを自動適用して10テーブルすべてが存在することを保証する。WAL モードと busy_timeout=5000ms を設定する
+
+#### Scenario: テスト用インメモリ DB
+- **WHEN** `SqliteClient::open_in_memory()` を呼び出した場合
+- **THEN** インメモリ SQLite DB を作成し、V1 マイグレーション SQL を直接実行してテスト用の全テーブルを作成する
+
+#### Scenario: DB パスの取得
+- **WHEN** `db::db_path()` を呼び出した場合
+- **THEN** `~/.config/kabu/kekekabu.db` のパスを返す
+
+#### Scenario: マイグレーション状態の取得
+- **WHEN** `db.migration_status()` を呼び出した場合
+- **THEN** `refinery_schema_history` テーブルから適用済みマイグレーションの version, name, applied_on を `Vec<MigrationInfo>` として返す。テーブルが存在しない場合は空の Vec を返す

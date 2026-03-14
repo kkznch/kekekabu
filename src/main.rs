@@ -60,6 +60,9 @@ enum Command {
     /// View database contents
     #[command(subcommand)]
     Show(ShowCommand),
+    /// Manage database (migrate, status, reset)
+    #[command(subcommand)]
+    Db(DbCommand),
     /// Manage launchd service (macOS)
     #[command(subcommand)]
     Service(ServiceCommand),
@@ -75,6 +78,20 @@ enum WorkflowCommand {
         /// Steps to skip (discover, scan, fetch)
         #[arg(long)]
         skip: Vec<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum DbCommand {
+    /// Run pending database migrations
+    Migrate,
+    /// Show database info and migration history
+    Status,
+    /// Delete database and start fresh (interactive confirmation required)
+    Reset {
+        /// Skip interactive confirmation (dangerous!)
+        #[arg(long)]
+        force: bool,
     },
 }
 
@@ -175,6 +192,16 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    // db subcommands manage DB directly
+    if let Command::Db(sub) = cli.command {
+        match sub {
+            DbCommand::Migrate => cmd::db::migrate(cli.format).await?,
+            DbCommand::Status => cmd::db::status(cli.format).await?,
+            DbCommand::Reset { force } => cmd::db::reset(force)?,
+        }
+        return Ok(());
+    }
+
     // service subcommands don't need DB or config
     if let Command::Service(sub) = cli.command {
         let rt = cmd::service::RealRuntime;
@@ -233,7 +260,11 @@ async fn main() -> Result<()> {
     }
 
     match cli.command {
-        Command::Config(_) | Command::Show(_) | Command::Service(_) | Command::Workflow(_) => {
+        Command::Config(_)
+        | Command::Show(_)
+        | Command::Db(_)
+        | Command::Service(_)
+        | Command::Workflow(_) => {
             unreachable!()
         }
         Command::Discover => {

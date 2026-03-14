@@ -335,6 +335,15 @@ impl HumanDisplay for crate::db::LlmLog {
     }
 }
 
+impl HumanDisplay for crate::db::MigrationInfo {
+    fn print_human(&self) {
+        println!(
+            "  V{:<4} {:<30} {}",
+            self.version, self.name, self.applied_on
+        );
+    }
+}
+
 fn step_label(status: &crate::cmd::workflow::StepStatus) -> &str {
     use crate::cmd::workflow::StepStatus;
     match status {

@@ -57,6 +57,9 @@ async-trait = "0.1"
 # Spec hashing
 sha2 = "0.10"
 
+# Random generation
+rand = "0.9"
+
 # Tachibana API
 tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
 encoding_rs = "0.8"

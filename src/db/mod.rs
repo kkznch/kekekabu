@@ -134,7 +134,7 @@ pub struct FillParams {
 
 // ─── Utility functions ────────────────────────────────────────────────
 
-fn db_path() -> std::path::PathBuf {
+pub fn db_path() -> std::path::PathBuf {
     if let Some(dir) = crate::config::config_dir() {
         // Ensure directory exists for DB file creation
         let _ = std::fs::create_dir_all(&dir);
@@ -390,6 +390,51 @@ impl SqliteClient {
             })
             .await
             .context("Failed to execute portfolio sell")
+    }
+}
+
+// ─── Migration info ───────────────────────────────────────────────────
+
+#[derive(Debug, serde::Serialize)]
+pub struct MigrationInfo {
+    pub version: i32,
+    pub name: String,
+    pub applied_on: String,
+}
+
+impl SqliteClient {
+    pub async fn migration_status(&self) -> Result<Vec<MigrationInfo>> {
+        self.conn
+            .call(|conn| {
+                // refinery_schema_history may not exist if no migrations have been applied
+                let has_table: bool = conn
+                    .query_row(
+                        "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='refinery_schema_history'",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or(false);
+
+                if !has_table {
+                    return Ok(Vec::new());
+                }
+
+                let mut stmt = conn.prepare(
+                    "SELECT version, name, applied_on FROM refinery_schema_history ORDER BY version",
+                )?;
+                let rows = stmt
+                    .query_map([], |row| {
+                        Ok(MigrationInfo {
+                            version: row.get(0)?,
+                            name: row.get(1)?,
+                            applied_on: row.get(2)?,
+                        })
+                    })?
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                Ok::<Vec<MigrationInfo>, rusqlite::Error>(rows)
+            })
+            .await
+            .context("Failed to get migration status")
     }
 }
 

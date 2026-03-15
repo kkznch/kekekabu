@@ -25,7 +25,7 @@ impl HumanDisplay for DbStatus {
 
 pub async fn migrate(format: OutputFormat) -> Result<()> {
     info!("Running database migrations");
-    let db = db::SqliteClient::open().await?;
+    let db = db::SqliteClient::open_or_create().await?;
     let migrations = db.migration_status().await?;
     output::print_list_output(&migrations, format);
     info!(count = migrations.len(), "Migrations applied");
@@ -98,6 +98,6 @@ pub fn reset(force: bool) -> Result<()> {
     }
 
     eprintln!("Database deleted: {}", path.display());
-    eprintln!("Run any command to recreate with fresh schema.");
+    eprintln!("Run `kabu db migrate` to recreate with fresh schema.");
     Ok(())
 }

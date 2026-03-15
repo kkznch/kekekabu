@@ -54,6 +54,21 @@ fn resolve_spec_path(path: &str) -> std::path::PathBuf {
 }
 
 impl InvestmentSpec {
+    /// Create an InvestmentSpec from a TOML string.
+    pub fn from_str_for_test(raw: &str) -> Self {
+        let table: toml::Table = toml::from_str(raw).expect("invalid TOML in test");
+        let name = table
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Test")
+            .to_string();
+        Self {
+            name,
+            raw_content: raw.to_string(),
+            table,
+        }
+    }
+
     pub fn to_prompt_section(&self) -> String {
         format!(
             "## Investment Spec: {}\n\n```toml\n{}\n```",

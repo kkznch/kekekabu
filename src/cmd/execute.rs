@@ -8,7 +8,7 @@ use crate::circuit_breaker;
 use crate::config::AppConfig;
 use crate::db::{DbClient, FillParams};
 use crate::spec::InvestmentSpec;
-use crate::tachibana::TachibanaClient;
+use crate::tachibana::BrokerClient;
 use crate::tachibana::order::map_status_code;
 
 #[derive(Debug, Serialize)]
@@ -64,119 +64,22 @@ pub struct OrderResult {
 
 pub async fn run(
     conn: &dyn DbClient,
-    config: &AppConfig,
+    _config: &AppConfig,
     spec: &InvestmentSpec,
+    mut broker: Option<&mut dyn BrokerClient>,
     dry_run: bool,
 ) -> Result<ExecuteResult> {
-    let mut settle_results = Vec::new();
     let mut order_results = Vec::new();
     let mut hard_stop_loss_actions = Vec::new();
 
-    // Build Tachibana client if non-dry-run
-    let mut client = if !dry_run {
-        let tc_config = config.tachibana.as_ref().ok_or_else(|| {
-            anyhow::anyhow!(
-                "[tachibana] config is required for non-dry-run execute. \
-                 Set it in ~/.config/kabu/config.toml or use TACHIBANA_* env vars."
-            )
-        })?;
-        Some(TachibanaClient::new(tc_config))
-    } else {
-        None
-    };
-
     // ── Phase 1: Settle — check previous pending orders ──
-    let pending_orders = conn.list_pending_orders().await?;
-    if !pending_orders.is_empty() {
-        if let Some(ref mut client) = client {
-            info!(count = pending_orders.len(), "Settling pending orders");
-            client.ensure_logged_in().await?;
-
-            for order in &pending_orders {
-                let Some(ref tachibana_id) = order.tachibana_order_id else {
-                    warn!(
-                        order_id = order.id,
-                        "Pending order has no tachibana_order_id, skipping settle"
-                    );
-                    continue;
-                };
-
-                match client.query_order(tachibana_id).await {
-                    Ok(detail) => {
-                        let new_status = map_status_code(&detail.status_code);
-                        if new_status != "pending" && new_status != order.status {
-                            let filled_at = if new_status == "filled" || new_status == "partial" {
-                                Some(chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string())
-                            } else {
-                                None
-                            };
-
-                            if new_status == "filled" || new_status == "partial" {
-                                conn.update_order_and_record_fill(FillParams {
-                                    order_id: order.id,
-                                    status: new_status.to_string(),
-                                    tachibana_order_id: None,
-                                    filled_price: detail.filled_price.clone(),
-                                    filled_quantity: detail.filled_quantity.clone(),
-                                    filled_at,
-                                    ticker: order.ticker.clone(),
-                                    side: order.side.clone(),
-                                })
-                                .await?;
-                            } else {
-                                conn.update_order_status(
-                                    order.id,
-                                    new_status,
-                                    None,
-                                    detail.filled_price.as_deref(),
-                                    detail.filled_quantity.as_deref(),
-                                    None,
-                                )
-                                .await?;
-                            }
-
-                            settle_results.push(SettleResult {
-                                ticker: order.ticker.clone(),
-                                order_id: order.id,
-                                old_status: order.status.clone(),
-                                new_status: new_status.to_string(),
-                                filled_price: detail.filled_price,
-                                filled_quantity: detail.filled_quantity,
-                            });
-
-                            info!(
-                                ticker = %order.ticker,
-                                order_id = order.id,
-                                new_status,
-                                "Order settled"
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        warn!(
-                            ticker = %order.ticker,
-                            order_id = order.id,
-                            error = %e,
-                            "Failed to query order for settle, will retry next run"
-                        );
-                    }
-                }
-            }
-        } else {
-            info!(
-                count = pending_orders.len(),
-                "Pending orders exist but skipping settle in dry-run mode"
-            );
-        }
-    }
+    let settle_results = settle_pending_orders(conn, &mut broker).await?;
 
     // ── Phase 2: Circuit breaker check ──
     let cb = circuit_breaker::check(conn).await?;
     if !cb.safe {
         warn!("Circuit breaker triggered! Aborting execute.");
-        if let Some(ref mut client) = client {
-            let _ = client.logout().await;
-        }
+        logout_broker(&mut broker).await;
         return Ok(ExecuteResult {
             actions: vec![],
             circuit_breaker_triggered: true,
@@ -189,63 +92,15 @@ pub async fn run(
 
     // ── Phase 3: Hard stop-loss check (rule-based, independent of LLM) ──
     let positions = conn.list_positions().await?;
-    let stop_loss_threshold = spec.execution_stop_loss();
-
-    if let Some(threshold) = stop_loss_threshold {
-        for pos in &positions {
-            let loss_pct = match pos.unrealized_pnl_pct {
-                Some(pct) => pct,
-                None => continue,
-            };
-
-            // threshold is e.g. -0.07, loss_pct is e.g. -8.5 (percentage)
-            // Convert threshold to percentage for comparison: -0.07 → -7.0
-            let threshold_pct =
-                Decimal::from_str(&format!("{}", threshold * 100.0)).unwrap_or_default();
-
-            if loss_pct <= threshold_pct {
-                warn!(
-                    ticker = %pos.ticker,
-                    loss_pct = %loss_pct,
-                    threshold = %threshold_pct,
-                    "HARD STOP-LOSS triggered — forced sell"
-                );
-
-                let action_str = if dry_run {
-                    format!(
-                        "[DRY RUN] Would force-sell {} (loss: {}%, threshold: {}%)",
-                        pos.ticker, loss_pct, threshold_pct
-                    )
-                } else {
-                    format!(
-                        "Force-sell {} (loss: {}%, threshold: {}%)",
-                        pos.ticker, loss_pct, threshold_pct
-                    )
-                };
-
-                hard_stop_loss_actions.push(HardStopLossAction {
-                    ticker: pos.ticker.clone(),
-                    name: pos.name.clone(),
-                    avg_cost: pos.avg_cost.to_string(),
-                    current_price: pos.current_price.map(|p| p.to_string()).unwrap_or_default(),
-                    loss_pct: loss_pct.to_string(),
-                    threshold: threshold_pct.to_string(),
-                    action: action_str,
-                });
-
-                // Generate forced sell signal (non-dry-run only, handled in Phase 5)
-                // Signals are injected below after eval signals
-            }
-        }
+    if let Some(threshold) = spec.execution_stop_loss() {
+        hard_stop_loss_actions = check_hard_stop_loss(&positions, threshold, dry_run);
     }
 
     // ── Phase 4: Get today's evaluations and generate signals ──
     let evals = conn.get_latest_evaluations_for_today().await?;
     if evals.is_empty() && hard_stop_loss_actions.is_empty() {
         info!("No evaluations for today and no stop-loss triggers. Nothing to execute.");
-        if let Some(ref mut client) = client {
-            let _ = client.logout().await;
-        }
+        logout_broker(&mut broker).await;
         return Ok(ExecuteResult {
             actions: vec![],
             circuit_breaker_triggered: false,
@@ -259,7 +114,6 @@ pub async fn run(
     let held_tickers: std::collections::HashSet<String> =
         positions.iter().map(|p| p.ticker.clone()).collect();
 
-    // Pre-compute stop-loss tickers for blocking conflicting buy signals
     let stop_loss_tickers: std::collections::HashSet<String> = hard_stop_loss_actions
         .iter()
         .map(|a| a.ticker.clone())
@@ -311,7 +165,7 @@ pub async fn run(
                         Some(Signal {
                             ticker: eval.ticker.clone(),
                             side: "buy".to_string(),
-                            eval_id: eval.id,
+                            eval_id: Some(eval.id),
                             force_market: false,
                         }),
                     )
@@ -356,7 +210,7 @@ pub async fn run(
                         Some(Signal {
                             ticker: eval.ticker.clone(),
                             side: "sell".to_string(),
-                            eval_id: eval.id,
+                            eval_id: Some(eval.id),
                             force_market: false,
                         }),
                     )
@@ -400,7 +254,6 @@ pub async fn run(
     }
 
     // ── Phase 5: Inject hard stop-loss forced sell signals ──
-    // Stop-loss sells are eval-independent (eval_id = 0) and use market order semantics
     if !dry_run {
         for sl in &hard_stop_loss_actions {
             // Skip if an eval-based sell signal already exists for this ticker
@@ -417,7 +270,7 @@ pub async fn run(
             signals.push(Signal {
                 ticker: sl.ticker.clone(),
                 side: "sell".to_string(),
-                eval_id: 0, // 0 indicates rule-based, not eval-based
+                eval_id: None,
                 force_market: true,
             });
         }
@@ -429,7 +282,9 @@ pub async fn run(
     let mut new_tachibana_order_ids: Vec<String> = Vec::new();
 
     if !dry_run && !signals.is_empty() {
-        let client = client.as_mut().unwrap();
+        let client = broker
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("BrokerClient required for non-dry-run execution"))?;
         client.ensure_logged_in().await?;
 
         for sig in &signals {
@@ -439,22 +294,18 @@ pub async fn run(
                 continue;
             }
 
-            // Use latest close price as limit price
             let last_close = conn.get_latest_close(stock_id).await?.unwrap_or(0.0);
             if last_close <= 0.0 {
                 warn!(ticker = %sig.ticker, "No price data available, skipping order");
                 continue;
             }
 
-            // Stop-loss sells use market order (price "0" signals market order to Tachibana)
-            let use_market = sig.force_market;
-            let price_str = if use_market {
+            let price_str = if sig.force_market {
                 "0".to_string()
             } else {
                 format!("{:.0}", last_close)
             };
 
-            // For sell: use position quantity. For buy: 100 shares (単元株)
             let quantity = if sig.side == "sell" {
                 positions
                     .iter()
@@ -494,23 +345,14 @@ pub async fn run(
                 }
             }
 
-            // Idempotent request_id
             let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-            let request_id = if sig.eval_id == 0 {
-                // Stop-loss: use special prefix to avoid collision with eval-based orders
-                format!("{}-{}-{}-stoploss", today, sig.ticker, sig.side)
-            } else {
-                format!("{}-{}-{}-{}", today, sig.ticker, sig.side, sig.eval_id)
+            let request_id = match sig.eval_id {
+                Some(id) => format!("{}-{}-{}-{}", today, sig.ticker, sig.side, id),
+                None => format!("{}-{}-{}-stoploss", today, sig.ticker, sig.side),
             };
 
-            let order_type = if use_market { "market" } else { "limit" };
+            let order_type = if sig.force_market { "market" } else { "limit" };
 
-            // Save order to DB first (idempotent)
-            let eval_id_opt = if sig.eval_id == 0 {
-                None
-            } else {
-                Some(sig.eval_id)
-            };
             let order_id = conn
                 .save_order(
                     stock_id,
@@ -519,11 +361,10 @@ pub async fn run(
                     &price_str,
                     &quantity,
                     &request_id,
-                    eval_id_opt,
+                    sig.eval_id,
                 )
                 .await?;
 
-            // Place order via Tachibana API
             match client
                 .place_order(&sig.side, &sig.ticker, &price_str, &quantity)
                 .await
@@ -580,7 +421,7 @@ pub async fn run(
     // ── Phase 7: Short WebSocket fill wait ──
     if !dry_run
         && !new_tachibana_order_ids.is_empty()
-        && let Some(ref client) = client
+        && let Some(ref client) = broker
     {
         info!(
             order_count = new_tachibana_order_ids.len(),
@@ -589,11 +430,9 @@ pub async fn run(
 
         match client.wait_for_fills(&new_tachibana_order_ids).await {
             Ok(fills) => {
-                // Fetch pending orders once for all fills
                 let pending = conn.list_pending_orders().await?;
 
                 for fill in fills {
-                    // Update matching order result
                     if let Some(or) = order_results
                         .iter_mut()
                         .find(|o| o.tachibana_order_id.as_deref() == Some(&fill.order_number))
@@ -601,7 +440,6 @@ pub async fn run(
                         or.status = "filled".to_string();
                     }
 
-                    // Find matching pending order from pre-fetched list
                     if let Some(order) = pending
                         .iter()
                         .find(|o| o.tachibana_order_id.as_deref() == Some(&fill.order_number))
@@ -637,9 +475,7 @@ pub async fn run(
     }
 
     // ── Phase 8: Logout ──
-    if let Some(ref mut client) = client {
-        let _ = client.logout().await;
-    }
+    logout_broker(&mut broker).await;
 
     Ok(ExecuteResult {
         actions,
@@ -651,11 +487,163 @@ pub async fn run(
     })
 }
 
+// ─── Helper functions ────────────────────────────────────────────────
+
 /// Internal signal for order placement.
 struct Signal {
     ticker: String,
     side: String,
-    eval_id: i64,
+    eval_id: Option<i64>,
     /// Use market order (for hard stop-loss sells).
     force_market: bool,
+}
+
+async fn logout_broker(broker: &mut Option<&mut dyn BrokerClient>) {
+    if let Some(client) = broker {
+        let _ = client.logout().await;
+    }
+}
+
+async fn settle_pending_orders(
+    conn: &dyn DbClient,
+    broker: &mut Option<&mut dyn BrokerClient>,
+) -> Result<Vec<SettleResult>> {
+    let pending_orders = conn.list_pending_orders().await?;
+    if pending_orders.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let Some(client) = broker else {
+        info!(
+            count = pending_orders.len(),
+            "Pending orders exist but skipping settle in dry-run mode"
+        );
+        return Ok(vec![]);
+    };
+
+    info!(count = pending_orders.len(), "Settling pending orders");
+    client.ensure_logged_in().await?;
+
+    let mut results = Vec::new();
+    for order in &pending_orders {
+        let Some(ref tachibana_id) = order.tachibana_order_id else {
+            warn!(
+                order_id = order.id,
+                "Pending order has no tachibana_order_id, skipping settle"
+            );
+            continue;
+        };
+
+        let detail = match client.query_order(tachibana_id).await {
+            Ok(d) => d,
+            Err(e) => {
+                warn!(
+                    ticker = %order.ticker,
+                    order_id = order.id,
+                    error = %e,
+                    "Failed to query order for settle, will retry next run"
+                );
+                continue;
+            }
+        };
+
+        let new_status = map_status_code(&detail.status_code);
+        if new_status == "pending" || new_status == order.status {
+            continue;
+        }
+
+        let is_fill = new_status == "filled" || new_status == "partial";
+        if is_fill {
+            let filled_at = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            conn.update_order_and_record_fill(FillParams {
+                order_id: order.id,
+                status: new_status.to_string(),
+                tachibana_order_id: None,
+                filled_price: detail.filled_price.clone(),
+                filled_quantity: detail.filled_quantity.clone(),
+                filled_at: Some(filled_at),
+                ticker: order.ticker.clone(),
+                side: order.side.clone(),
+            })
+            .await?;
+        } else {
+            conn.update_order_status(
+                order.id,
+                new_status,
+                None,
+                detail.filled_price.as_deref(),
+                detail.filled_quantity.as_deref(),
+                None,
+            )
+            .await?;
+        }
+
+        results.push(SettleResult {
+            ticker: order.ticker.clone(),
+            order_id: order.id,
+            old_status: order.status.clone(),
+            new_status: new_status.to_string(),
+            filled_price: detail.filled_price,
+            filled_quantity: detail.filled_quantity,
+        });
+
+        info!(
+            ticker = %order.ticker,
+            order_id = order.id,
+            new_status,
+            "Order settled"
+        );
+    }
+
+    Ok(results)
+}
+
+fn check_hard_stop_loss(
+    positions: &[crate::portfolio::PositionView],
+    threshold: f64,
+    dry_run: bool,
+) -> Vec<HardStopLossAction> {
+    let threshold_pct = Decimal::from_str(&format!("{}", threshold * 100.0)).unwrap_or_default();
+    let mut actions = Vec::new();
+
+    for pos in positions {
+        let Some(loss_pct) = pos.unrealized_pnl_pct else {
+            continue;
+        };
+
+        if loss_pct > threshold_pct {
+            continue;
+        }
+
+        warn!(
+            ticker = %pos.ticker,
+            loss_pct = %loss_pct,
+            threshold = %threshold_pct,
+            "HARD STOP-LOSS triggered — forced sell"
+        );
+
+        let action_str = if dry_run {
+            format!(
+                "[DRY RUN] Would force-sell {} (loss: {}%, threshold: {}%)",
+                pos.ticker, loss_pct, threshold_pct
+            )
+        } else {
+            format!(
+                "Force-sell {} (loss: {}%, threshold: {}%)",
+                pos.ticker, loss_pct, threshold_pct
+            )
+        };
+
+        actions.push(HardStopLossAction {
+            ticker: pos.ticker.clone(),
+            name: pos.name.clone(),
+            avg_cost: pos.avg_cost.to_string(),
+            current_price: pos.current_price.map(|p| p.to_string()).unwrap_or_default(),
+            loss_pct: loss_pct.to_string(),
+            threshold: threshold_pct.to_string(),
+            action: action_str,
+        });
+    }
+
+    actions
 }

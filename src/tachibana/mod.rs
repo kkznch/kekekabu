@@ -3,11 +3,31 @@ pub mod order;
 pub mod request;
 
 use anyhow::{Context, Result};
+use async_trait::async_trait;
 
 use crate::config::TachibanaConfig;
 use request::{decode_shift_jis, json_str};
 
 const AUTH_URL: &str = "https://kabuka.e-shiten.jp/e_api_v4r8/auth/";
+
+/// Broker API trait for dependency injection.
+#[async_trait]
+pub trait BrokerClient: Send + Sync {
+    async fn ensure_logged_in(&mut self) -> Result<()>;
+    async fn place_order(
+        &self,
+        side: &str,
+        ticker: &str,
+        price: &str,
+        quantity: &str,
+    ) -> Result<order::NewOrderResult>;
+    async fn query_order(&self, order_number: &str) -> Result<order::OrderDetail>;
+    async fn wait_for_fills(
+        &self,
+        pending_order_numbers: &[String],
+    ) -> Result<Vec<event::FillNotification>>;
+    async fn logout(&mut self) -> Result<()>;
+}
 
 /// Session URLs obtained after successful authentication.
 #[derive(Debug, Clone)]
@@ -186,5 +206,38 @@ impl TachibanaClient {
         }
         self.session = None;
         Ok(())
+    }
+}
+
+#[async_trait]
+impl BrokerClient for TachibanaClient {
+    async fn ensure_logged_in(&mut self) -> Result<()> {
+        TachibanaClient::ensure_logged_in(self).await?;
+        Ok(())
+    }
+
+    async fn place_order(
+        &self,
+        side: &str,
+        ticker: &str,
+        price: &str,
+        quantity: &str,
+    ) -> Result<order::NewOrderResult> {
+        TachibanaClient::place_order(self, side, ticker, price, quantity).await
+    }
+
+    async fn query_order(&self, order_number: &str) -> Result<order::OrderDetail> {
+        TachibanaClient::query_order(self, order_number).await
+    }
+
+    async fn wait_for_fills(
+        &self,
+        pending_order_numbers: &[String],
+    ) -> Result<Vec<event::FillNotification>> {
+        TachibanaClient::wait_for_fills(self, pending_order_numbers).await
+    }
+
+    async fn logout(&mut self) -> Result<()> {
+        TachibanaClient::logout(self).await
     }
 }

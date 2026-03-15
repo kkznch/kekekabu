@@ -15,8 +15,9 @@ pub fn build_new_order_json(
     quantity: &str,
 ) -> serde_json::Value {
     let baibai_kubun = match side {
+        "buy" => "3",
         "sell" => "1",
-        _ => "3", // buy
+        other => panic!("Invalid order side: '{}' (expected 'buy' or 'sell')", other),
     };
 
     serde_json::json!({

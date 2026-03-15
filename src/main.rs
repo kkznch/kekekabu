@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use kekekabu::output::OutputFormat;
-use kekekabu::{cmd, config, db, jquants, output, spec};
+use kekekabu::{cmd, config, db, jquants, output, spec, tachibana};
 
 #[derive(Parser)]
 #[command(name = "kabu", about = "JP stock investment CLI")]
@@ -291,7 +291,22 @@ async fn main() -> Result<()> {
         }
         Command::Execute { dry_run } => {
             let investment_spec = spec::load_spec(&config.spec.path)?;
-            let result = cmd::execute::run(&db, &config, &investment_spec, dry_run).await?;
+            let mut broker = if !dry_run {
+                let tc_config = config.tachibana.as_ref().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "[tachibana] config is required for non-dry-run execute. \
+                         Set it in ~/.config/kabu/config.toml or use TACHIBANA_* env vars."
+                    )
+                })?;
+                Some(tachibana::TachibanaClient::new(tc_config))
+            } else {
+                None
+            };
+            let broker_ref: Option<&mut dyn tachibana::BrokerClient> = broker
+                .as_mut()
+                .map(|b| b as &mut dyn tachibana::BrokerClient);
+            let result =
+                cmd::execute::run(&db, &config, &investment_spec, broker_ref, dry_run).await?;
             output::print_output(&result, cli.format);
         }
         Command::Report { date, output: out } => {

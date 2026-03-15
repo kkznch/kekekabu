@@ -302,7 +302,7 @@ pub struct SqliteClient {
 
 impl SqliteClient {
     /// Open existing database. Fails if DB file does not exist.
-    /// Use `open_or_create()` to create a new database (called by `kabu db migrate`).
+    /// Does NOT run migrations — use `kabu db migrate` for that.
     pub async fn open() -> Result<Self> {
         let path = db_path();
 
@@ -313,11 +313,11 @@ impl SqliteClient {
             );
         }
 
-        Self::open_and_migrate(path).await
+        Self::open_connection(path).await
     }
 
     /// Create database if needed and apply migrations.
-    /// This is the only entry point that creates a new DB file.
+    /// This is the only entry point that creates a new DB file (`kabu db migrate`).
     pub async fn open_or_create() -> Result<Self> {
         let path = db_path();
 
@@ -327,10 +327,6 @@ impl SqliteClient {
                 .with_context(|| format!("Failed to create directory {:?}", parent))?;
         }
 
-        Self::open_and_migrate(path).await
-    }
-
-    async fn open_and_migrate(path: std::path::PathBuf) -> Result<Self> {
         // Run versioned migrations with a raw rusqlite connection.
         // refinery requires &mut Connection, which tokio-rusqlite doesn't expose.
         {
@@ -348,7 +344,10 @@ impl SqliteClient {
             .context("Migration task panicked")??;
         }
 
-        // Open async connection for runtime use
+        Self::open_connection(path).await
+    }
+
+    async fn open_connection(path: std::path::PathBuf) -> Result<Self> {
         let conn = Connection::open(&path)
             .await
             .with_context(|| format!("Failed to open database at {:?}", path))?;

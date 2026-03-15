@@ -20,13 +20,13 @@ src/
   output.rs          JSON (default) / human output formatting
   portfolio.rs       Portfolio management (buy/sell, weighted avg cost, P&L)
   circuit_breaker.rs Safety checks (abnormal price moves, market-wide crash)
-  notification.rs    Webhook notification (Slack/Discord/LINE via webhook_url)
+  notification.rs    Notifier trait (platform-agnostic notification abstraction)
   spec.rs            Investment Spec TOML loader + SHA256 hashing + execution params
   db/
     mod.rs           SQLite operations (10 tables)
     schema.rs        Table definitions
   tachibana/
-    mod.rs           Tachibana Securities e-Shiten API client (auth, session)
+    mod.rs           BrokerClient trait + Tachibana Securities e-Shiten API client
     request.rs       REQUEST I/F helpers (JSON, URL encode, p_no, Shift-JIS decode)
     order.rs         Order builders (CLMKabuNewOrder, CLMOrderListDetail)
     event.rs         EVENT I/F WebSocket (fill notifications)
@@ -127,7 +127,7 @@ kabu report -o ~/reports/$(date +%Y-%m-%d).md
 ```sh
 aqua install                         # Install tools (just, etc.)
 just build                           # Build
-just test                            # Run all tests (116 tests, in-memory SQLite)
+just test                            # Run all tests (130 tests, in-memory SQLite)
 just lint                            # Clippy lints
 just ci                              # fmt-check + lint + test
 just --list                          # Show all available tasks

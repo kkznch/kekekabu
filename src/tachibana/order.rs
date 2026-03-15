@@ -1,23 +1,18 @@
 use anyhow::{Context, Result};
 
+use super::Side;
 use super::request::{self, json_str};
 
-/// Build CLMKabuNewOrder request JSON for a limit order.
-///
-/// - `side`: "buy" or "sell" → mapped to sOrderBaibaiKubun "3" (buy) or "1" (sell)
-/// - `ticker`: stock code e.g. "7203"
-/// - `price`: limit price as string e.g. "2500"
-/// - `quantity`: order quantity as string e.g. "100"
+/// Build CLMKabuNewOrder request JSON.
 pub fn build_new_order_json(
-    side: &str,
+    side: Side,
     ticker: &str,
     price: &str,
     quantity: &str,
 ) -> serde_json::Value {
     let baibai_kubun = match side {
-        "buy" => "3",
-        "sell" => "1",
-        other => panic!("Invalid order side: '{}' (expected 'buy' or 'sell')", other),
+        Side::Buy => "3",
+        Side::Sell => "1",
     };
 
     serde_json::json!({
@@ -131,7 +126,7 @@ mod tests {
 
     #[test]
     fn test_build_new_order_buy() {
-        let json = build_new_order_json("buy", "7203", "2500", "100");
+        let json = build_new_order_json(Side::Buy, "7203", "2500", "100");
         assert_eq!(json["sCLMID"], "CLMKabuNewOrder");
         assert_eq!(json["sIssueCode"], "7203");
         assert_eq!(json["sOrderBaibaiKubun"], "3"); // buy
@@ -142,7 +137,7 @@ mod tests {
 
     #[test]
     fn test_build_new_order_sell() {
-        let json = build_new_order_json("sell", "6758", "15000", "200");
+        let json = build_new_order_json(Side::Sell, "6758", "15000", "200");
         assert_eq!(json["sOrderBaibaiKubun"], "1"); // sell
     }
 

@@ -4,7 +4,7 @@ use kekekabu::cmd::execute;
 use kekekabu::config::AppConfig;
 use kekekabu::db::{DbClient, SqliteClient};
 use kekekabu::spec::InvestmentSpec;
-use kekekabu::tachibana::{BrokerClient, event::FillNotification, order};
+use kekekabu::tachibana::{BrokerClient, Side, event::FillNotification, order};
 use rust_decimal::Decimal;
 use std::sync::Mutex;
 
@@ -54,13 +54,13 @@ impl BrokerClient for MockBrokerClient {
 
     async fn place_order(
         &self,
-        side: &str,
+        side: Side,
         ticker: &str,
         price: &str,
         quantity: &str,
     ) -> Result<order::NewOrderResult> {
         self.orders.lock().unwrap().push(MockOrder {
-            side: side.to_string(),
+            side: side.as_str().to_string(),
             ticker: ticker.to_string(),
             price: price.to_string(),
             quantity: quantity.to_string(),

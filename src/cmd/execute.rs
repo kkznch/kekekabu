@@ -8,8 +8,8 @@ use crate::circuit_breaker;
 use crate::config::AppConfig;
 use crate::db::{DbClient, FillParams};
 use crate::spec::InvestmentSpec;
-use crate::tachibana::BrokerClient;
 use crate::tachibana::order::map_status_code;
+use crate::tachibana::{BrokerClient, Side};
 
 #[derive(Debug, Serialize)]
 pub struct ExecuteResult {
@@ -164,7 +164,7 @@ pub async fn run(
                         format!("Buy signal for {} (score: {})", eval.ticker, eval.score),
                         Some(Signal {
                             ticker: eval.ticker.clone(),
-                            side: "buy".to_string(),
+                            side: Side::Buy,
                             eval_id: Some(eval.id),
                             force_market: false,
                         }),
@@ -209,7 +209,7 @@ pub async fn run(
                         format!("Sell signal for {} (score: {})", eval.ticker, eval.score),
                         Some(Signal {
                             ticker: eval.ticker.clone(),
-                            side: "sell".to_string(),
+                            side: Side::Sell,
                             eval_id: Some(eval.id),
                             force_market: false,
                         }),
@@ -259,7 +259,7 @@ pub async fn run(
             // Skip if an eval-based sell signal already exists for this ticker
             if signals
                 .iter()
-                .any(|s| s.ticker == sl.ticker && s.side == "sell")
+                .any(|s| s.ticker == sl.ticker && s.side == Side::Sell)
             {
                 info!(
                     ticker = %sl.ticker,
@@ -269,7 +269,7 @@ pub async fn run(
             }
             signals.push(Signal {
                 ticker: sl.ticker.clone(),
-                side: "sell".to_string(),
+                side: Side::Sell,
                 eval_id: None,
                 force_market: true,
             });
@@ -306,7 +306,7 @@ pub async fn run(
                 format!("{:.0}", last_close)
             };
 
-            let quantity = if sig.side == "sell" {
+            let quantity = if sig.side == Side::Sell {
                 positions
                     .iter()
                     .find(|p| p.ticker == sig.ticker)
@@ -317,7 +317,7 @@ pub async fn run(
             };
 
             // Max position size check for buy orders
-            if sig.side == "buy"
+            if sig.side == Side::Buy
                 && let (Some(max_size), Some(cash)) = (max_position_size, initial_cash)
             {
                 let order_value = last_close * quantity.parse::<f64>().unwrap_or(100.0);
@@ -332,7 +332,7 @@ pub async fn run(
                     );
                     order_results.push(OrderResult {
                         ticker: sig.ticker.clone(),
-                        side: sig.side.clone(),
+                        side: sig.side.as_str().to_string(),
                         price: price_str,
                         quantity,
                         tachibana_order_id: None,
@@ -356,7 +356,7 @@ pub async fn run(
             let order_id = conn
                 .save_order(
                     stock_id,
-                    &sig.side,
+                    sig.side.as_str(),
                     order_type,
                     &price_str,
                     &quantity,
@@ -366,7 +366,7 @@ pub async fn run(
                 .await?;
 
             match client
-                .place_order(&sig.side, &sig.ticker, &price_str, &quantity)
+                .place_order(sig.side, &sig.ticker, &price_str, &quantity)
                 .await
             {
                 Ok(result) => {
@@ -393,7 +393,7 @@ pub async fn run(
 
                     order_results.push(OrderResult {
                         ticker: sig.ticker.clone(),
-                        side: sig.side.clone(),
+                        side: sig.side.as_str().to_string(),
                         price: price_str,
                         quantity,
                         tachibana_order_id: Some(result.order_number),
@@ -407,7 +407,7 @@ pub async fn run(
 
                     order_results.push(OrderResult {
                         ticker: sig.ticker.clone(),
-                        side: sig.side.clone(),
+                        side: sig.side.as_str().to_string(),
                         price: price_str,
                         quantity,
                         tachibana_order_id: None,
@@ -492,7 +492,7 @@ pub async fn run(
 /// Internal signal for order placement.
 struct Signal {
     ticker: String,
-    side: String,
+    side: Side,
     eval_id: Option<i64>,
     /// Use market order (for hard stop-loss sells).
     force_market: bool,

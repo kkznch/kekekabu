@@ -196,6 +196,7 @@ pub trait DbClient: Send + Sync {
     -> Result<()>;
     async fn fetch_price_data(&self, stock_id: i64) -> Result<PriceData>;
     async fn get_latest_close(&self, stock_id: i64) -> Result<Option<f64>>;
+    async fn get_latest_closes(&self, stock_id: i64, n: usize) -> Result<Vec<f64>>;
 
     // Watchlist operations
     async fn watchlist_add(&self, ticker: &str, notes: Option<&str>) -> Result<()>;
@@ -711,6 +712,27 @@ impl DbClient for SqliteClient {
             })
             .await
             .context("Failed to get latest close price")
+    }
+
+    async fn get_latest_closes(&self, stock_id: i64, n: usize) -> Result<Vec<f64>> {
+        self.conn
+            .call(move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT close FROM prices WHERE stock_id = ?1 ORDER BY date DESC LIMIT ?2",
+                )?;
+                let rows = stmt
+                    .query_map(rusqlite::params![stock_id, n as i64], |row| {
+                        let close_str: String = row.get(0)?;
+                        Ok(decimal_str_to_f64(&close_str))
+                    })?
+                    .collect::<Result<Vec<_>, _>>()?;
+                // Reverse so oldest is first (chronological order)
+                let mut closes = rows;
+                closes.reverse();
+                Ok::<Vec<f64>, rusqlite::Error>(closes)
+            })
+            .await
+            .context("Failed to get latest closes")
     }
 
     // -- Watchlist operations --

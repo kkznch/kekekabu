@@ -12,43 +12,42 @@ pub struct CircuitBreakerResult {
 pub async fn check(conn: &dyn DbClient) -> Result<CircuitBreakerResult> {
     let mut reasons = Vec::new();
 
-    // Check for abnormal price movements across watchlist
     let watchlist = conn.watchlist_list().await?;
 
     let mut crash_count = 0;
     let total = watchlist.len();
 
     for item in &watchlist {
-        let stock_id = match conn.get_stock_id(&item.ticker).await? {
-            Some(id) => id,
-            None => continue,
+        let Some(stock_id) = conn.get_stock_id(&item.ticker).await? else {
+            continue;
         };
 
-        let price_data = conn.fetch_price_data(stock_id).await?;
-        if price_data.closes.len() < 2 {
+        let closes = conn.get_latest_closes(stock_id, 2).await?;
+        if closes.len() < 2 {
             continue;
         }
 
-        let len = price_data.closes.len();
-        let current = price_data.closes[len - 1];
-        let previous = price_data.closes[len - 2];
+        let current = closes[1];
+        let previous = closes[0];
 
-        if previous > 0.0 {
-            let change_pct = (current - previous) / previous;
+        if previous <= 0.0 {
+            continue;
+        }
 
-            // Individual stock circuit breaker: >30% move
-            if change_pct.abs() > 0.30 {
-                reasons.push(format!(
-                    "{}: abnormal price movement ({:.1}%)",
-                    item.ticker,
-                    change_pct * 100.0
-                ));
-            }
+        let change_pct = (current - previous) / previous;
 
-            // Track crashes for market-wide check
-            if change_pct < -0.05 {
-                crash_count += 1;
-            }
+        // Individual stock circuit breaker: >30% move
+        if change_pct.abs() > 0.30 {
+            reasons.push(format!(
+                "{}: abnormal price movement ({:.1}%)",
+                item.ticker,
+                change_pct * 100.0
+            ));
+        }
+
+        // Track crashes for market-wide check
+        if change_pct < -0.05 {
+            crash_count += 1;
         }
     }
 

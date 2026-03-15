@@ -10,13 +10,36 @@ use request::{decode_shift_jis, json_str};
 
 const AUTH_URL: &str = "https://kabuka.e-shiten.jp/e_api_v4r8/auth/";
 
+/// Order side (buy or sell).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Side {
+    Buy,
+    Sell,
+}
+
+impl Side {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Side::Buy => "buy",
+            Side::Sell => "sell",
+        }
+    }
+}
+
+impl std::fmt::Display for Side {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Broker API trait for dependency injection.
 #[async_trait]
 pub trait BrokerClient: Send + Sync {
     async fn ensure_logged_in(&mut self) -> Result<()>;
     async fn place_order(
         &self,
-        side: &str,
+        side: Side,
         ticker: &str,
         price: &str,
         quantity: &str,
@@ -150,10 +173,10 @@ impl TachibanaClient {
         Ok(decode_shift_jis(&bytes))
     }
 
-    /// Place a new limit order.
+    /// Place a new order.
     pub async fn place_order(
         &self,
-        side: &str,
+        side: Side,
         ticker: &str,
         price: &str,
         quantity: &str,
@@ -218,7 +241,7 @@ impl BrokerClient for TachibanaClient {
 
     async fn place_order(
         &self,
-        side: &str,
+        side: Side,
         ticker: &str,
         price: &str,
         quantity: &str,

@@ -14,7 +14,7 @@ discover → scan → fetch → eval → execute → report
 | `scan` | J-Quants API から価格データを取得し、テクニカル指標（RSI, MACD, BB, SMA 等）を算出 |
 | `fetch` | LLM で最新ニュース・開示・センチメント等の情報を収集 |
 | `eval` | LLM で投資判断を生成。新規候補は Buy/Avoid、保有中は Hold/Sell |
-| `execute` | サーキットブレーカー確認後、立花証券 API 経由で売買を執行（`--dry-run` でシミュレーション） |
+| `execute` | ハードストップロス + サーキットブレーカー確認後、立花証券 API 経由で売買を執行（`--dry-run` / `--live`） |
 | `report` | 評価結果を Markdown レポートとして出力 |
 
 ### 判断フロー
@@ -32,7 +32,7 @@ eval: 銘柄を評価し、売買判断を生成
     ├─ watchlist にある & 保有中 → ExistingHolding → Hold / Sell
     └─ watchlist にない & 保有中 → ExistingHolding → Hold / Sell
     ↓
-execute: settle（前回未約定注文の確認） → サーキットブレーカー → 発注 → 約定待ち
+execute: settle → サーキットブレーカー → ハードストップロス → 発注 → 約定待ち
     ↓
 report: 評価結果を Markdown レポートに出力
 ```
@@ -133,6 +133,9 @@ just build
 cargo run -- config init
 # → ~/.config/kabu/config.toml と specs/template.toml が生成される
 
+# データベースの初期化
+cargo run -- db migrate
+
 # 設定のバリデーション
 cargo run -- config validate
 ```
@@ -164,7 +167,7 @@ cargo run -- config validate
 
 | キー | 説明 | 必須 |
 |------|------|------|
-| `user_id` | e-支店ログインID | `execute`（非 dry-run）時 |
+| `user_id` | e-支店ログインID | `execute --live` 時 |
 | `password` | ログインパスワード | 同上 |
 | `second_password` | 第二パスワード | 同上 |
 | `event_timeout_secs` | WebSocket 約定待ちタイムアウト（秒、デフォルト 30） | いいえ |
@@ -255,7 +258,8 @@ kabu discover                        # LLM で有望銘柄を発掘・watchlist 
 kabu scan --refresh-master --days 60  # 初回は --refresh-master 必須
 kabu fetch
 kabu eval
-kabu execute --dry-run
+kabu execute --dry-run               # シミュレーション
+kabu execute --live                  # 本番発注（立花証券 API）
 kabu report -o report.md
 
 # DB 閲覧
@@ -306,7 +310,7 @@ kabu workflow run --skip discover    # 日次（discover スキップ）
 kabu discover && kabu scan --days 60 && kabu fetch && kabu eval
 
 # 市場オープン: 実行
-kabu execute
+kabu execute --live
 
 # 夕方: レポート生成
 kabu report -o ~/reports/$(date +%Y-%m-%d).md
@@ -329,7 +333,20 @@ just --list         # タスク一覧
 
 - マイグレーションファイルは `migrations/` ディレクトリに配置
 - 命名規則: `V{番号}__{説明}.sql`（アンダースコア2つ）
-- `init_db()` 起動時に自動適用（`refinery_schema_history` テーブルで適用済みを管理）
+- `kabu db migrate` で明示的に適用（`refinery_schema_history` テーブルで適用済みを管理）
+- DB が存在しない状態でコマンドを実行するとエラーになり、`kabu db migrate` の実行を案内します
+
+```sh
+# DB の初期化 / マイグレーション適用
+kabu db migrate
+
+# DB 状態の確認（パス、サイズ、適用済みマイグレーション）
+kabu db status
+
+# DB の削除（確認コードによる安全な削除）
+kabu db reset
+kabu db reset --force    # 確認をスキップ
+```
 
 ### 新しいマイグレーションの追加方法
 
@@ -337,15 +354,15 @@ just --list         # タスク一覧
 # 例: カラム追加
 echo "ALTER TABLE stocks ADD COLUMN listed_at TEXT;" > migrations/V2__add_listed_at.sql
 
-# ビルド時にコンパイルエラーがないか確認
-just build
+# ビルド + テスト
+just ci
 
-# テスト実行で動作確認
-just test
+# 適用
+kabu db migrate
 ```
 
 マイグレーションは冪等に書く必要はありません（refinery が適用済みのものをスキップします）。
-テストではインメモリ DB に `V1__initial_schema.sql` を直接実行するため、新しいマイグレーションを追加した場合はテストの `setup_db()` にも反映が必要です。
+テストではインメモリ DB でも `refinery::embed_migrations!` を使用するため、新しいマイグレーション追加時にテストコードの変更は不要です。
 
 ## 技術スタック
 
@@ -359,9 +376,12 @@ just test
 
 ## 安全機構
 
+- **ハードストップロス**: 投資 Spec の `stop_loss` 閾値を超える損失ポジションを LLM 判断に関わらず成行で強制売り
+- **最大エクスポージャー**: `max_position_size × initial_cash` を超える買い注文を自動 reject
 - **サーキットブレーカー**: 個別銘柄 >30% 変動、またはウォッチリストの >50% が >5% 下落した場合に execute をブロック
-- **ドライラン**: `execute --dry-run` がデフォルト（`--dry-run` なしで立花 API 経由の実発注）
+- **明示的実行モード**: `execute` は `--dry-run` か `--live` の明示が必須（フラグなしはヘルプ表示）
 - **注文べき等性**: `request_id`（日付+銘柄+売買方向+評価ID）の UNIQUE 制約で同一評価からの重複発注を防止
 - **投資 Spec**: TOML で戦略パラメータを外部管理、SHA256 ハッシュで評価時の Spec を追跡
 - **eval 履歴注入**: 直近3件の評価履歴を LLM プロンプトに注入し、売→再買のフリップフロップを抑制
 - **売却時 watchlist 自動除外**: ポジション全量売却時に watchlist から自動除外し、再評価ループを防止
+- **明示的 DB 初期化**: `kabu db migrate` でのみ DB を作成。暗黙の自動作成を排除

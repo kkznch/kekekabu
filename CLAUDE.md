@@ -70,8 +70,8 @@ kabu scan --days 60                  # Fetch prices + compute TA
 kabu scan --refresh-master --days 60 # Refresh stock master + scan
 kabu fetch                           # Gather info via Gemini
 kabu eval                            # LLM evaluation (Hunting + Farming)
-kabu execute --dry-run               # Execute trades (dry run)
-kabu execute                         # Execute trades (real: Tachibana API)
+kabu execute --dry-run               # Execute trades (simulation)
+kabu execute --live                  # Execute trades (real: Tachibana API)
 kabu report -o report.md             # Generate Markdown report
 
 # Workflow (single-process pipeline with per-stock error isolation)
@@ -116,7 +116,7 @@ kabu workflow run --skip discover    # Skip discover (daily use)
 kabu discover && kabu scan --days 60 && kabu fetch && kabu eval
 
 # Market open: execute
-kabu execute
+kabu execute --live
 
 # Evening: report
 kabu report -o ~/reports/$(date +%Y-%m-%d).md

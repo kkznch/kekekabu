@@ -44,9 +44,12 @@ enum Command {
     },
     /// Execute trades based on today's evaluations
     Execute {
-        /// Dry run (don't actually place orders)
-        #[arg(long, default_value = "true")]
+        /// Dry run (simulate without placing orders)
+        #[arg(long, conflicts_with = "live")]
         dry_run: bool,
+        /// Place real orders via Tachibana API
+        #[arg(long, conflicts_with = "dry_run")]
+        live: bool,
     },
     /// Generate investment report as Markdown
     Report {
@@ -289,12 +292,20 @@ async fn main() -> Result<()> {
             let results = cmd::eval::run(&db, &config, &tickers).await?;
             output::print_list_output(&results, cli.format);
         }
-        Command::Execute { dry_run } => {
+        Command::Execute { dry_run, live } => {
+            if !dry_run && !live {
+                eprintln!("Usage: kabu execute --dry-run  (simulate)");
+                eprintln!("       kabu execute --live     (place real orders)");
+                eprintln!();
+                eprintln!("You must specify either --dry-run or --live.");
+                std::process::exit(1);
+            }
+
             let investment_spec = spec::load_spec(&config.spec.path)?;
-            let mut broker = if !dry_run {
+            let mut broker = if live {
                 let tc_config = config.tachibana.as_ref().ok_or_else(|| {
                     anyhow::anyhow!(
-                        "[tachibana] config is required for non-dry-run execute. \
+                        "[tachibana] config is required for --live execute. \
                          Set it in ~/.config/kabu/config.toml or use TACHIBANA_* env vars."
                     )
                 })?;

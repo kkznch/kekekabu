@@ -15,6 +15,7 @@ discover → scan → fetch → eval → execute → report
 | `fetch` | LLM で最新ニュース・開示・センチメント等の情報を収集 |
 | `eval` | LLM で投資判断を生成。新規候補は Buy/Avoid、保有中は Hold/Sell |
 | `execute` | ハードストップロス + サーキットブレーカー確認後、立花証券 API 経由で売買を執行（`--dry-run` / `--live`） |
+| `watch` | WebSocket 常駐で約定通知をリアルタイム受信し、DB に即時反映 |
 | `report` | 評価結果を Markdown レポートとして出力 |
 
 ### 判断フロー
@@ -32,7 +33,9 @@ eval: 銘柄を評価し、売買判断を生成
     ├─ watchlist にある & 保有中 → ExistingHolding → Hold / Sell
     └─ watchlist にない & 保有中 → ExistingHolding → Hold / Sell
     ↓
-execute: settle → サーキットブレーカー → ハードストップロス → 発注 → 約定待ち
+execute: settle → サーキットブレーカー → ハードストップロス → 発注
+    ↓
+watch: WebSocket 常駐で約定通知を受信 → DB 自動更新（別プロセス）
     ↓
 report: 評価結果を Markdown レポートに出力
 ```
@@ -51,6 +54,7 @@ flowchart LR
         fetch
         eval
         execute
+        watch
         report
     end
 
@@ -96,6 +100,11 @@ flowchart LR
     execute -->|約定記録| trades
     execute -->|売却時auto-remove| watchlist
 
+    orders -.->|pending注文| watch
+    watch -->|約定時| positions
+    watch -->|約定記録| trades
+    watch -->|売却時auto-remove| watchlist
+
     evaluations -.->|判断結果| report
     fetch_results -.->|関連情報| report
     stocks -.->|銘柄名| report
@@ -112,8 +121,10 @@ flowchart LR
 | `fetch` | R/W | ✓ | - |
 | `eval` | R/W | ✓ | - |
 | `execute` | R/W | - | 立花証券 |
+| `watch` | R/W | - | 立花証券 WebSocket |
 | `report` | R | - | - |
 | `show` | R | - | - |
+| `db` | R/W | - | - |
 | `config init` | - | - | - |
 | `config validate` | - | - | - |
 | `service` | - | - | - |
@@ -163,16 +174,18 @@ cargo run -- config validate
 
 `cli-gemini` / `cli-claude` はそれぞれ `gemini` / `claude` CLI がインストールされている必要があります。
 
-### `[tachibana]` — 立花証券 API（execute 実行時に必要）
+### `[tachibana]` — 立花証券 API（execute / watch 実行時に必要）
 
 | キー | 説明 | 必須 |
 |------|------|------|
-| `user_id` | e-支店ログインID | `execute --live` 時 |
+| `user_id` | e-支店ログインID | `execute --live` / `watch` 時 |
 | `password` | ログインパスワード | 同上 |
 | `second_password` | 第二パスワード | 同上 |
-| `event_timeout_secs` | WebSocket 約定待ちタイムアウト（秒、デフォルト 30） | いいえ |
+| `environment` | `production`（デフォルト）または `demo` | いいえ |
 
-環境変数 `TACHIBANA_USER_ID`, `TACHIBANA_PASSWORD`, `TACHIBANA_SECOND_PASSWORD` でも設定可能です。
+環境変数 `TACHIBANA_USER_ID`, `TACHIBANA_PASSWORD`, `TACHIBANA_SECOND_PASSWORD`, `TACHIBANA_ENVIRONMENT` でも設定可能です。
+
+`--demo` フラグを使うと config の environment 設定に関わらずデモ環境に切り替わります。デモ環境では API エンドポイント（`demo.e-shiten.jp`）と DB ファイル（`kekekabu-demo.db`）が自動的に分離されます。
 
 ### `[spec]` — 投資戦略
 
@@ -314,12 +327,15 @@ kabu workflow run --skip discover    # 日次（discover スキップ）
 # 個別コマンドで実行する場合
 kabu discover && kabu scan --days 60 && kabu fetch && kabu eval
 
-# 市場オープン: 実行
-kabu execute --live
+# 市場オープン: 約定監視 + 実行
+kabu watch &                         # バックグラウンドで約定監視を開始
+kabu execute --live                  # 発注（約定は watch が検知）
 
 # 夕方: レポート生成
 kabu report -o ~/reports/$(date +%Y-%m-%d).md
 ```
+
+> **約定検知の仕組み**: `execute` は注文発注後に即座に終了します。約定の検知は (1) `watch` が常駐していれば WebSocket 経由で即時反映、(2) `watch` が動いていなくても次回 `execute` の settle フェーズで ORDER I/F 照会により検知されます。
 
 ## 開発
 
@@ -390,3 +406,4 @@ kabu db migrate
 - **eval 履歴注入**: 直近3件の評価履歴を LLM プロンプトに注入し、売→再買のフリップフロップを抑制
 - **売却時 watchlist 自動除外**: ポジション全量売却時に watchlist から自動除外し、再評価ループを防止
 - **明示的 DB 初期化**: `kabu db migrate` でのみ DB を作成。暗黙の自動作成を排除
+- **デモ環境分離**: `--demo` フラグで API エンドポイントと DB を完全分離。デモデータが本番に混入しない

@@ -27,7 +27,7 @@ src/
     schema.rs        Table definitions
   tachibana/
     mod.rs           BrokerClient trait + Tachibana Securities e-Shiten API client
-    request.rs       REQUEST I/F helpers (JSON, URL encode, p_no, Shift-JIS decode)
+    request.rs       REQUEST I/F helpers (JSON POST body, p_no, Shift-JIS encode/decode)
     order.rs         Order builders (CLMKabuNewOrder, CLMOrderListDetail)
     event.rs         EVENT I/F WebSocket (fill notifications)
   llm/

@@ -95,6 +95,7 @@ impl TachibanaClient {
             .context("tachibana.second_password is not configured")?;
 
         let auth_json = serde_json::json!({
+            "sCLMID": "CLMAuthLoginRequest",
             "p_no": request::next_p_no(),
             "p_sd_date": request::p_sd_date(),
             "sUserId": user_id,
@@ -102,13 +103,15 @@ impl TachibanaClient {
             "sSecondPassword": second_password,
         });
 
-        let url = request::build_request_url(AUTH_URL, &auth_json)?;
+        let body = request::build_request_body(&auth_json)?;
 
         tracing::info!("Logging in to Tachibana API");
 
         let resp = self
             .http
-            .get(&url)
+            .post(AUTH_URL)
+            .header("Content-Type", "application/json; charset=Shift_JIS")
+            .body(body)
             .send()
             .await
             .context("Failed to send auth request")?;
@@ -155,17 +158,19 @@ impl TachibanaClient {
         self.login().await
     }
 
-    /// Send a REQUEST I/F command and return the parsed response body string.
+    /// Send a REQUEST I/F command via POST and return the parsed response body string.
     async fn send_request_raw(&self, json_value: &serde_json::Value) -> Result<String> {
         let session = self
             .session
             .as_ref()
             .context("Not logged in — call login() first")?;
 
-        let url = request::build_request_url(&session.request_url, json_value)?;
+        let body = request::build_request_body(json_value)?;
         let resp = self
             .http
-            .get(&url)
+            .post(&session.request_url)
+            .header("Content-Type", "application/json; charset=Shift_JIS")
+            .body(body)
             .send()
             .await
             .context("Failed to send request")?;
@@ -215,14 +220,21 @@ impl TachibanaClient {
     pub async fn logout(&mut self) -> Result<()> {
         if let Some(session) = &self.session {
             let json = serde_json::json!({
-                "sCLMID": "CLMLogout",
+                "sCLMID": "CLMAuthLogoutRequest",
                 "p_no": request::next_p_no(),
                 "p_sd_date": request::p_sd_date(),
             });
 
-            let url = request::build_request_url(&session.request_url, &json)?;
+            let body = request::build_request_body(&json)?;
             // Best-effort logout — don't fail if it errors
-            match self.http.get(&url).send().await {
+            match self
+                .http
+                .post(&session.request_url)
+                .header("Content-Type", "application/json; charset=Shift_JIS")
+                .body(body)
+                .send()
+                .await
+            {
                 Ok(_) => tracing::info!("Logged out from Tachibana API"),
                 Err(e) => tracing::warn!(error = %e, "Failed to logout from Tachibana API"),
             }

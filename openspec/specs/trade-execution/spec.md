@@ -4,20 +4,24 @@
 
 ## Requirements
 
-### Requirement: 当日の評価結果を処理
-システムは SHALL 当日の evaluations を処理し、decision とスコアに基づいて売買シグナルを生成する。
+### Requirement: 売買シグナルの生成と発注
+システムは SHALL execute コマンド内のシグナル（Signal 構造体）および注文結果（OrderResult 構造体）の売買方向フィールドとして `Side` enum を使用する。文字列リテラル `"buy"` / `"sell"` の直接使用を排除する。当日の evaluations を処理し、decision とスコアに基づいてシグナルを生成する。
 
-#### Scenario: 高スコア Buy の買いシグナル
-- **WHEN** evaluation の decision="Buy" かつ score >= 70 の場合
-- **THEN** 買いシグナルアクションを生成する
+#### Scenario: Buy シグナルの生成
+- **WHEN** eval の判断が Buy で、冪等性チェック（order_exists_for_evaluation）を通過し、score >= 70 の場合
+- **THEN** `Signal { side: Side::Buy, ... }` を生成する
 
 #### Scenario: 低スコア Buy の買いシグナルスキップ
 - **WHEN** evaluation の decision="Buy" かつ score < 70 の場合
 - **THEN** "score too low" の説明付きで買いシグナルをスキップする
 
-#### Scenario: Sell の売りシグナル
-- **WHEN** evaluation の decision="Sell" の場合
-- **THEN** portfolio_positions を確認し、保有していれば売りシグナルを生成する。保有していなければスキップする
+#### Scenario: Sell シグナルの生成
+- **WHEN** eval の判断が Sell、またはハードストップロスが発動した場合
+- **THEN** `Signal { side: Side::Sell, ... }` を生成する。portfolio_positions を確認し、保有していない場合はスキップする
+
+#### Scenario: DB 保存時の文字列変換
+- **WHEN** Signal を DB に保存する場合（save_order, order_exists_for_evaluation）
+- **THEN** `side.as_str()` で `"buy"` / `"sell"` に変換して保存する
 
 #### Scenario: 強い Avoid のレビューシグナル
 - **WHEN** evaluation の decision="Avoid" かつ score <= 30 の場合

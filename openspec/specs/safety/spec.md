@@ -4,8 +4,16 @@
 
 ## Requirements
 
-### Requirement: 個別銘柄の異常変動でサーキットブレーカーを発動
-システムは SHALL ウォッチリスト内の銘柄が1日で30%以上変動した場合、売買実行をブロックする。
+### Requirement: サーキットブレーカーによる異常検知
+システムは SHALL サーキットブレーカーの価格変動チェックにおいて、全価格履歴ではなく直近2件の終値のみを取得して判定する。`DbClient` trait に `get_latest_closes(stock_id, n)` メソッドを追加し、circuit_breaker はこれを使用する。ウォッチリスト内の銘柄が1日で30%以上変動した場合、売買実行をブロックする。
+
+#### Scenario: 直近終値による異常判定
+- **WHEN** circuit_breaker が銘柄の価格変動をチェックする場合
+- **THEN** `get_latest_closes(stock_id, 2)` で直近2件の終値を取得し、変動率を算出する。全価格履歴（fetch_price_data）は使用しない
+
+#### Scenario: 価格データ不足
+- **WHEN** 直近終値が2件未満の場合
+- **THEN** その銘柄の異常判定をスキップする
 
 #### Scenario: 個別銘柄のサーキットブレーカー
 - **WHEN** ウォッチリスト内の銘柄の日次変動率が30%を超えた場合
@@ -25,9 +33,17 @@
 - **WHEN** 個別銘柄・市場全体の両方の閾値を超えた場合
 - **THEN** すべてのトリガー理由を `circuit_breaker_reasons` 配列に含める
 
-### Requirement: execute のデフォルトはドライラン
-システムは SHALL `--dry-run` のデフォルトを `true` とし、誤発注を防止する。
+### Requirement: execute の明示的実行モード
+システムは SHALL `execute` コマンドで `--dry-run` か `--live` のいずれかのフラグを明示的に指定することを必須とし、フラグなしの場合はヘルプを表示して終了する。
 
-#### Scenario: デフォルトのドライラン
-- **WHEN** `--dry-run` フラグを明示せずに `kabu execute` を実行した場合
+#### Scenario: フラグ未指定
+- **WHEN** `kabu execute` をフラグなしで実行した場合
+- **THEN** ヘルプメッセージを表示して終了する（注文は発行されない）
+
+#### Scenario: ドライラン
+- **WHEN** `kabu execute --dry-run` を実行した場合
 - **THEN** ドライランモードで動作する（実際の注文は発行されない）
+
+#### Scenario: 本番実行
+- **WHEN** `kabu execute --live` を実行した場合
+- **THEN** 立花証券 API 経由で実際の注文を発行する

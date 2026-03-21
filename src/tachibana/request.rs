@@ -22,16 +22,11 @@ pub fn p_sd_date() -> String {
         .to_string()
 }
 
-/// Build a REQUEST I/F URL with JSON query parameter.
-/// Tachibana API expects: `{base_url}?{url_encoded_json}`
-pub fn build_request_url(base_url: &str, json_value: &serde_json::Value) -> Result<String> {
+/// Build a Shift-JIS encoded JSON body for POST requests (v4r8+).
+pub fn build_request_body(json_value: &serde_json::Value) -> Result<Vec<u8>> {
     let json_str = serde_json::to_string(json_value).context("Failed to serialize JSON")?;
-    let encoded_json = urlencoding_json(&json_str);
-    Ok(format!("{}?{}", base_url, encoded_json))
-}
-
-fn urlencoding_json(json: &str) -> String {
-    url::form_urlencoded::byte_serialize(json.as_bytes()).collect()
+    let (encoded, _, _) = encoding_rs::SHIFT_JIS.encode(&json_str);
+    Ok(encoded.into_owned())
 }
 
 /// Decode Shift-JIS response bytes to UTF-8 string.
@@ -119,12 +114,13 @@ mod tests {
     }
 
     #[test]
-    fn test_build_request_url() {
+    fn test_build_request_body() {
         let json = serde_json::json!({"sCLMID": "CLMKabuNewOrder", "p_no": "1"});
-        let url = build_request_url("https://example.com/api", &json).unwrap();
-        assert!(url.starts_with("https://example.com/api?"));
-        // Should contain URL-encoded JSON
-        assert!(url.contains("sCLMID"));
+        let body = build_request_body(&json).unwrap();
+        // Should produce Shift-JIS encoded bytes containing sCLMID
+        let decoded = decode_shift_jis(&body);
+        assert!(decoded.contains("sCLMID"));
+        assert!(decoded.contains("CLMKabuNewOrder"));
     }
 
     #[test]

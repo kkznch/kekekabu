@@ -70,6 +70,38 @@ pub fn parse_response(body: &str) -> Result<serde_json::Value> {
     Ok(value)
 }
 
+/// Check an already-parsed (and uncompressed) JSON value for API errors.
+/// Returns Ok(()) if no errors, or an error with the API error message.
+pub fn check_response_errors(value: &serde_json::Value) -> Result<()> {
+    // Check p_errno for request-level errors
+    if let Some(errno) = value.get("p_errno").and_then(|v| v.as_str())
+        && errno != "0"
+    {
+        let err_text = value
+            .get("p_err")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown error");
+        anyhow::bail!("Tachibana API error (p_errno={}): {}", errno, err_text);
+    }
+
+    // Check sResultCode for business-level errors
+    if let Some(result_code) = value.get("sResultCode").and_then(|v| v.as_str())
+        && result_code != "0"
+    {
+        let result_text = value
+            .get("sResultText")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown error");
+        anyhow::bail!(
+            "Tachibana API result error (sResultCode={}): {}",
+            result_code,
+            result_text
+        );
+    }
+
+    Ok(())
+}
+
 /// Extract a string field from a JSON value, returning None if missing or null.
 pub fn json_str(value: &serde_json::Value, key: &str) -> Option<String> {
     value
@@ -154,5 +186,26 @@ mod tests {
         assert_eq!(json_str(&v, "sOrderNumber"), Some("12345".to_string()));
         assert_eq!(json_str(&v, "empty"), None);
         assert_eq!(json_str(&v, "missing"), None);
+    }
+
+    #[test]
+    fn test_check_response_errors_success() {
+        let v = serde_json::json!({"p_errno": "0", "sResultCode": "0"});
+        assert!(check_response_errors(&v).is_ok());
+    }
+
+    #[test]
+    fn test_check_response_errors_p_errno() {
+        let v = serde_json::json!({"p_errno": "-2", "p_err": "パラメータエラー"});
+        let err = check_response_errors(&v).unwrap_err().to_string();
+        assert!(err.contains("p_errno=-2"));
+    }
+
+    #[test]
+    fn test_check_response_errors_result_code() {
+        let v =
+            serde_json::json!({"p_errno": "0", "sResultCode": "1", "sResultText": "注文エラー"});
+        let err = check_response_errors(&v).unwrap_err().to_string();
+        assert!(err.contains("sResultCode=1"));
     }
 }

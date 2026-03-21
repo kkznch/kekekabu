@@ -41,12 +41,18 @@ pub struct NewOrderResult {
     pub result_text: String,
 }
 
-/// Parse CLMKabuNewOrder response.
+/// Parse CLMKabuNewOrder response from a raw body string.
 pub fn parse_new_order_response(body: &str) -> Result<NewOrderResult> {
     let value = request::parse_response(body)?;
+    parse_new_order_value(&value)
+}
+
+/// Parse CLMKabuNewOrder from an already-parsed (and uncompressed) JSON value.
+pub fn parse_new_order_value(value: &serde_json::Value) -> Result<NewOrderResult> {
+    request::check_response_errors(value)?;
     let order_number =
-        json_str(&value, "sOrderNumber").context("Missing sOrderNumber in new order response")?;
-    let result_text = json_str(&value, "sResultText").unwrap_or_default();
+        json_str(value, "sOrderNumber").context("Missing sOrderNumber in new order response")?;
+    let result_text = json_str(value, "sResultText").unwrap_or_default();
 
     Ok(NewOrderResult {
         order_number,
@@ -94,19 +100,25 @@ pub fn map_status_code(code: &str) -> &'static str {
     }
 }
 
-/// Parse CLMOrderListDetail response.
+/// Parse CLMOrderListDetail response from a raw body string.
 pub fn parse_order_detail_response(body: &str) -> Result<OrderDetail> {
     let value = request::parse_response(body)?;
+    parse_order_detail_value(&value)
+}
+
+/// Parse CLMOrderListDetail from an already-parsed (and uncompressed) JSON value.
+pub fn parse_order_detail_value(value: &serde_json::Value) -> Result<OrderDetail> {
+    request::check_response_errors(value)?;
 
     let order_number =
-        json_str(&value, "sOrderNumber").context("Missing sOrderNumber in order detail")?;
-    let issue_code = json_str(&value, "sIssueCode").unwrap_or_default();
-    let status_code = json_str(&value, "sOrderStatusCode").unwrap_or_default();
-    let baibai_kubun = json_str(&value, "sOrderBaibaiKubun").unwrap_or_default();
-    let order_price = json_str(&value, "sOrderOrderPrice").unwrap_or_default();
-    let order_quantity = json_str(&value, "sOrderOrderSuryou").unwrap_or_default();
-    let filled_price = json_str(&value, "sYakuzyouPrice");
-    let filled_quantity = json_str(&value, "sYakuzyouSuryou");
+        json_str(value, "sOrderNumber").context("Missing sOrderNumber in order detail")?;
+    let issue_code = json_str(value, "sIssueCode").unwrap_or_default();
+    let status_code = json_str(value, "sOrderStatusCode").unwrap_or_default();
+    let baibai_kubun = json_str(value, "sOrderBaibaiKubun").unwrap_or_default();
+    let order_price = json_str(value, "sOrderOrderPrice").unwrap_or_default();
+    let order_quantity = json_str(value, "sOrderOrderSuryou").unwrap_or_default();
+    let filled_price = json_str(value, "sYakuzyouPrice");
+    let filled_quantity = json_str(value, "sYakuzyouSuryou");
 
     Ok(OrderDetail {
         order_number,

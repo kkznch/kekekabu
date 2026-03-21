@@ -1,3 +1,4 @@
+pub mod compress;
 pub mod event;
 pub mod order;
 pub mod request;
@@ -99,7 +100,8 @@ impl TachibanaClient {
             "sSecondPassword": second_password,
         });
 
-        let body = request::build_request_body(&auth_json)?;
+        let compressed_json = compress::compress(&auth_json);
+        let body = request::build_request_body(&compressed_json)?;
 
         tracing::info!(auth_url = %self.auth_url, "Logging in to Tachibana API");
 
@@ -112,9 +114,14 @@ impl TachibanaClient {
             .await
             .context("Failed to send auth request")?;
 
+        let status = resp.status();
         let bytes = resp.bytes().await.context("Failed to read auth response")?;
-        let body = decode_shift_jis(&bytes);
-        let value = request::parse_response(&body)?;
+        let raw_body = decode_shift_jis(&bytes);
+        let raw_value: serde_json::Value =
+            serde_json::from_str(&raw_body).context("Failed to parse auth response JSON")?;
+        let value = compress::uncompress(&raw_value);
+        tracing::debug!(http_status = %status, body_len = bytes.len(), "Auth response: {}", &value);
+        request::check_response_errors(&value)?;
 
         // Check for 金商法交付書面未読
         if let Some(flag) = json_str(&value, "sKinsyouhouMidokuFlg")
@@ -154,14 +161,15 @@ impl TachibanaClient {
         self.login().await
     }
 
-    /// Send a REQUEST I/F command via POST and return the parsed response body string.
-    async fn send_request_raw(&self, json_value: &serde_json::Value) -> Result<String> {
+    /// Send a REQUEST I/F command via POST, compress outgoing keys, uncompress response keys.
+    async fn send_request_raw(&self, json_value: &serde_json::Value) -> Result<serde_json::Value> {
         let session = self
             .session
             .as_ref()
             .context("Not logged in — call login() first")?;
 
-        let body = request::build_request_body(json_value)?;
+        let compressed = compress::compress(json_value);
+        let body = request::build_request_body(&compressed)?;
         let resp = self
             .http
             .post(&session.request_url)
@@ -171,7 +179,10 @@ impl TachibanaClient {
             .await
             .context("Failed to send request")?;
         let bytes = resp.bytes().await.context("Failed to read response")?;
-        Ok(decode_shift_jis(&bytes))
+        let raw_body = decode_shift_jis(&bytes);
+        let raw_value: serde_json::Value =
+            serde_json::from_str(&raw_body).context("Failed to parse response JSON")?;
+        Ok(compress::uncompress(&raw_value))
     }
 
     /// Place a new order.
@@ -183,15 +194,15 @@ impl TachibanaClient {
         quantity: &str,
     ) -> Result<order::NewOrderResult> {
         let json = order::build_new_order_json(side, ticker, price, quantity);
-        let body = self.send_request_raw(&json).await?;
-        order::parse_new_order_response(&body)
+        let value = self.send_request_raw(&json).await?;
+        order::parse_new_order_value(&value)
     }
 
     /// Query order detail by order number.
     pub async fn query_order(&self, order_number: &str) -> Result<order::OrderDetail> {
         let json = order::build_order_detail_json(order_number, "");
-        let body = self.send_request_raw(&json).await?;
-        order::parse_order_detail_response(&body)
+        let value = self.send_request_raw(&json).await?;
+        order::parse_order_detail_value(&value)
     }
 
     /// Log out (invalidate virtual URLs).
@@ -203,7 +214,8 @@ impl TachibanaClient {
                 "p_sd_date": request::p_sd_date(),
             });
 
-            let body = request::build_request_body(&json)?;
+            let compressed = compress::compress(&json);
+            let body = request::build_request_body(&compressed)?;
             // Best-effort logout — don't fail if it errors
             match self
                 .http

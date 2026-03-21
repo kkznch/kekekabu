@@ -41,6 +41,7 @@ src/
     fetch.rs         Gemini info gathering (news, disclosure, sentiment)
     eval.rs          LLM investment evaluation (Hunting: Buy/Avoid, Farming: Hold/Sell) + history injection
     execute.rs       Trade execution (settle + circuit breaker + hard stop-loss + max exposure + orders via Tachibana API)
+    watch.rs         WebSocket persistent fill notification receiver
     report.rs        Markdown report generation
     show.rs          DB viewer (watchlist, events, positions, evaluations, stocks, tables, summary, trades, orders)
     config.rs        Config init + validate handlers
@@ -49,7 +50,7 @@ src/
 ## Key Design Decisions
 
 - **JP market only** — no US stock support
-- **SQLite** via `tokio-rusqlite` (bundled). DB at `~/.config/kabu/kekekabu.db`
+- **SQLite** via `tokio-rusqlite` (bundled). DB at `~/.config/kabu/kekekabu.db` (demo: `kekekabu-demo.db`)
 - **Money as TEXT** — `rust_decimal::Decimal` for precision
 - **Idempotent writes** — `INSERT OR IGNORE` / `ON CONFLICT` everywhere
 - **Default JSON output** — `--format human` for table display
@@ -72,7 +73,12 @@ kabu fetch                           # Gather info via Gemini
 kabu eval                            # LLM evaluation (Hunting + Farming)
 kabu execute --dry-run               # Execute trades (simulation)
 kabu execute --live                  # Execute trades (real: Tachibana API)
-kabu report -o report.md             # Generate Markdown report
+kabu watch                           # WebSocket persistent fill receiver
+kabu report -o report.md
+
+# Demo environment (separate DB + demo API endpoint)
+kabu --demo db migrate               # Initialize demo DB
+kabu --demo execute --dry-run        # Dry-run against demo             # Generate Markdown report
 
 # Workflow (single-process pipeline with per-stock error isolation)
 kabu workflow run                    # Run discover → scan → fetch → eval
@@ -127,7 +133,7 @@ kabu report -o ~/reports/$(date +%Y-%m-%d).md
 ```sh
 aqua install                         # Install tools (just, etc.)
 just build                           # Build
-just test                            # Run all tests (130 tests, in-memory SQLite)
+just test                            # Run all tests (in-memory SQLite)
 just lint                            # Clippy lints
 just ci                              # fmt-check + lint + test
 just --list                          # Show all available tasks

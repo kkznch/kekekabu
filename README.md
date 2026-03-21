@@ -260,7 +260,12 @@ kabu fetch
 kabu eval
 kabu execute --dry-run               # シミュレーション
 kabu execute --live                  # 本番発注（立花証券 API）
+kabu watch                           # WebSocket 常駐（約定通知を即時 DB 反映）
 kabu report -o report.md
+
+# デモ環境（--demo で API エンドポイントと DB を分離）
+kabu --demo db migrate               # デモ用 DB 初期化
+kabu --demo execute --dry-run        # デモ環境でシミュレーション
 
 # DB 閲覧
 kabu show watchlist                  # ウォッチリスト

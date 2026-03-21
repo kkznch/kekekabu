@@ -43,7 +43,7 @@ impl TachibanaConfig {
     pub fn auth_url(&self) -> &'static str {
         match self.environment {
             Environment::Production => "https://kabuka.e-shiten.jp/e_api_v4r8/auth/",
-            Environment::Demo => "https://demo.e-shiten.jp/e_api_v4r8/auth/",
+            Environment::Demo => "https://demo-kabuka.e-shiten.jp/e_api_v4r8/auth/",
         }
     }
 

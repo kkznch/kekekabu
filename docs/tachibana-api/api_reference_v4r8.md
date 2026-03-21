@@ -1,7 +1,7 @@
 # Tachibana Securities e-Shiten API Reference (v4r8)
 
 Version: v4.8-000 (released 2025-09-27, v4r7 retired 2025-11-29)
-Source: `mfds_json_api_menu.html` (Shift-JIS decoded), `api_overview_v4r7.txt`, existing codebase
+Source: `mfds_json_api_menu.html` (Shift-JIS decoded), official API reference page snapshot, existing codebase
 
 ---
 
@@ -48,56 +48,81 @@ Demo:       https://demo.e-shiten.jp/e_api_v4r8/  (estimated)
 
 ## 2. Authentication (Auth I/F)
 
-### 2.1 Login
+### 2.1 Login (CLMAuthLoginRequest / CLMAuthLoginAck)
 
 **Endpoint**: `https://kabuka.e-shiten.jp/e_api_v4r8/auth/`
 
 **Method**: HTTPS GET (URL-encoded JSON query string) or HTTPS POST (v4r8+)
 
-#### Request Parameters
+#### Request (sCLMID: `CLMAuthLoginRequest`)
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMAuthLoginRequest"` |
 | `sUserId` | string | Yes | e-Shiten login ID |
 | `sPassword` | string | Yes | Login password (URL-encode special chars: `# + / : =`) |
-| `sSecondPassword` | string | Yes | Second password (required for all order operations) |
 | `p_no` | string | Yes | Request sequence number (monotonically increasing) |
 | `p_sd_date` | string | Yes | Client timestamp `YYYY.MM.DD-HH:MM:SS.mmm` |
 
-#### Response Fields
+#### Response (sCLMID: `CLMAuthLoginAck`)
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `p_errno` | string | Error number (`"0"` = success) |
-| `p_err` | string | Error text (when `p_errno != "0"`) |
+| `sCLMID` | string | `"CLMAuthLoginAck"` |
+| `sResultCode` | string | Business result (`"0"` = success; non-zero = see result/warning code table) |
+| `sResultText` | string | Result message text (empty on success) |
+| `sZyoutoekiKazeiC` | string | Tax account type: `"1"` = Specific, `"3"` = General, `"5"` = NISA |
+| `sSecondPasswordOmit` | string | Second password omission: `"0"` = required (fixed value for API) |
+| `sLastLoginDate` | string | Last login datetime `YYYYMMDDHHMMSS` |
+| `sSogoKouzaKubun` | string | Comprehensive account: `"0"` = not opened, `"1"` = opened |
+| `sHogoAdukariKouzaKubun` | string | Safekeeping account: `"0"` / `"1"` |
+| `sFurikaeKouzaKubun` | string | Transfer settlement account: `"0"` / `"1"` |
+| `sGaikokuKouzaKubun` | string | Foreign account: `"0"` / `"1"` |
+| `sMRFKouzaKubun` | string | MRF account: `"0"` / `"1"` |
+| `sTokuteiKouzaKubunGenbutu` | string | Specific account (spot): `"0"` = general, `"1"` = specific (no withholding), `"2"` = specific (with withholding) |
+| `sTokuteiKouzaKubunSinyou` | string | Specific account (margin): same as above |
+| `sTokuteiKouzaKubunTousin` | string | Specific account (investment trust): same as above |
+| `sTokuteiHaitouKouzaKubun` | string | Dividend specific account: `"0"` / `"1"` |
+| `sTokuteiKanriKouzaKubun` | string | Specific management account: `"0"` / `"1"` |
+| `sSinyouKouzaKubun` | string | Margin trading account: `"0"` / `"1"` |
+| `sSakopKouzaKubun` | string | Futures/Options account: `"0"` / `"1"` |
+| `sMMFKouzaKubun` | string | MMF account: `"0"` / `"1"` |
+| `sTyukokufKouzaKubun` | string | China Fund account: `"0"` / `"1"` |
+| `sKawaseKouzaKubun` | string | FX margin account: `"0"` / `"1"` |
+| `sHikazeiKouzaKubun` | string | Tax-exempt (NISA) account: `"0"` / `"1"` |
+| `sKinsyouhouMidokuFlg` | string | `"1"` = unread financial documents (API unusable until acknowledged via web); `"0"` = read |
 | `sUrlRequest` | string | Virtual URL for business functions (REQUEST I/F) |
 | `sUrlMaster` | string | Virtual URL for master data functions (REQUEST I/F) |
 | `sUrlPrice` | string | Virtual URL for market price functions (REQUEST I/F) |
 | `sUrlEvent` | string | Virtual URL for EVENT I/F (HTTP Chunk version) |
 | `sUrlEventWebSocket` | string | Virtual URL for EVENT I/F (WebSocket version, v4r7+) |
-| `sKinsyouhouMidokuFlg` | string | `"1"` = unread financial documents exist (must read via web browser first) |
-| `sKoufuSyomenUpdateYoteiDay` | string | Scheduled date for document updates (v4r5+) |
-| `sApiReleaseYoteiDay` | string | Scheduled API release date (v4r5+) |
+| `sUpdateInformWebDocument` | string | Scheduled date for web document updates |
+| `sUpdateInformAPISpecFunction` | string | Scheduled API release date |
 
 #### Authentication Notes
 
-- If `sKinsyouhouMidokuFlg == "1"`, virtual URLs are not issued. User must log in via web browser and acknowledge documents first.
+- If `sKinsyouhouMidokuFlg == "1"`, virtual URLs are not issued (set to `""`). User must log in via web browser and acknowledge documents first.
 - **Phone verification** is required since 2025-07-26. On first authentication, phone verification must be completed. After that, the virtual URL remains valid until invalidated.
 - Virtual URLs remain valid until explicitly invalidated; they can be reused across multiple sessions without re-authenticating each time.
+- The `sUpdateInformWebDocument` and `sUpdateInformAPISpecFunction` fields notify of upcoming changes. Check: `(scheduled_date >= today) AND (scheduled_date != previous_value)`.
 
-### 2.2 Logout
+### 2.2 Logout (CLMAuthLogoutRequest / CLMAuthLogoutAck)
 
-Send a REQUEST I/F command with `sCLMID = "CLMLogout"` to the virtual URL (REQUEST).
+#### Request (sCLMID: `CLMAuthLogoutRequest`)
 
-#### Request
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMAuthLogoutRequest"` |
 
-```json
-{
-  "sCLMID": "CLMLogout",
-  "p_no": "N",
-  "p_sd_date": "YYYY.MM.DD-HH:MM:SS.mmm"
-}
-```
+**Note**: Logout is sent to the Auth I/F endpoint, not the REQUEST I/F virtual URL.
+
+#### Response (sCLMID: `CLMAuthLogoutAck`)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMAuthLogoutAck"` |
+| `sResultCode` | string | See CLMAuthLoginAck.sResultCode |
+| `sResultText` | string | See CLMAuthLoginAck.sResultText |
 
 ### 2.3 Virtual URL Lifecycle
 
@@ -169,6 +194,8 @@ Optional:
 | `p_err` | string | Error message text (present when `p_errno != "0"`) |
 | `sResultCode` | string | Business-level result (`"0"` = OK) |
 | `sResultText` | string | Result message text |
+| `sWarningCode` | string | Warning code (`"0"` = no warning) |
+| `sWarningText` | string | Warning message text |
 
 ### 3.5 Virtual URL Routing
 
@@ -198,116 +225,313 @@ Within REQUEST I/F, requests must be strictly serial (wait for response before s
 | Parameter | Type | Required | Description | Values |
 |-----------|------|----------|-------------|--------|
 | `sCLMID` | string | Yes | `"CLMKabuNewOrder"` | |
-| `sIssueCode` | string | Yes | Stock ticker code | e.g., `"7203"` |
-| `sOrderSizyouC` | string | Yes | Market code | `"00"` = TSE |
-| `sOrderBaibaiKubun` | string | Yes | Buy/Sell | `"1"` = Sell, `"3"` = Buy |
-| `sGenkinSinyouKubun` | string | Yes | Cash/Margin | `"0"` = Cash (spot), `"2"` = Margin (new position) |
-| `sOrderCondition` | string | Yes | Order condition | `"0"` = Normal, `"1"` = OCO, etc. |
-| `sOrderOrderPriceKubun` | string | Yes | Price type | `"1"` = Market, `"2"` = Limit |
-| `sOrderOrderPrice` | string | Yes* | Order price | Required for limit orders; empty for market orders |
-| `sOrderOrderSuryou` | string | Yes | Order quantity (shares) | e.g., `"100"` |
-| `sOrderOrderExpireDay` | string | Yes | Expiration | `"0"` = Day only, `"YYYYMMDD"` = specific date |
-| `sGyousyaCode` | string | No | Broker code | Usually empty |
-| `sOrderTatebiType` | string | No | Position date type (margin) | |
-| `sOrderTategyokuNumber` | string | No | Position number (margin close) | |
+| `sZyoutoekiKazeiC` | string | Yes | Tax account type | `"1"` = Specific, `"3"` = General, `"5"` = NISA (sell only after 2024), `"6"` = NISA Growth (from 2024) |
+| `sIssueCode` | string | Yes | Stock ticker code | e.g., `"6501"` |
+| `sSizyouC` | string | Yes | Market code | `"00"` = TSE |
+| `sBaibaiKubun` | string | Yes | Buy/Sell | `"1"` = Sell, `"3"` = Buy, `"5"` = Cash delivery (Genwatashi), `"7"` = Cash receipt (Genbiki) |
+| `sCondition` | string | Yes | Execution condition | `"0"` = None, `"2"` = Opening (Yoritsuki), `"4"` = Closing (Hike), `"6"` = Funari |
+| `sOrderPrice` | string | Yes | Order price | `"*"` = unspecified, `"0"` = market, otherwise limit price |
+| `sOrderSuryou` | string | Yes | Order quantity (shares) | e.g., `"100"` |
+| `sGenkinShinyouKubun` | string | Yes | Cash/Margin type | `"0"` = Cash, `"2"` = New margin (system 6mo), `"4"` = Close margin (system 6mo), `"6"` = New margin (general 6mo), `"8"` = Close margin (general 6mo) |
+| `sOrderExpireDay` | string | Yes | Order expiration | `"0"` = Day only, `"YYYYMMDD"` = GTC until date (max 10 business days) |
+| `sGyakusasiOrderType` | string | Yes | Stop order type | `"0"` = Normal, `"1"` = Stop (reverse limit), `"2"` = Normal + Stop combination |
+| `sGyakusasiZyouken` | string | Yes | Stop trigger condition | `"0"` = None, otherwise trigger price |
+| `sGyakusasiPrice` | string | Yes | Stop order price | `"*"` = None, `"0"` = market, otherwise limit price |
+| `sTatebiType` | string | Yes | Position date type (margin close) | `"*"` = N/A (spot or new), `"1"` = Individual, `"2"` = Date order, `"3"` = Profit order, `"4"` = Loss order |
+| `sTategyokuZyoutoekiKazeiC` | string | Yes | Position tax account (for Genbiki/Genwatashi) | `"*"` = N/A, `"1"` = Specific, `"3"` = General |
+| `sSecondPassword` | string | Yes | Second password (order password) | |
+| `aCLMKabuHensaiData` | array | No | Repayment position list (for individual margin close) | See CLMKabuHensaiData below |
 | `p_no` | string | Yes | Request sequence number | |
 | `p_sd_date` | string | Yes | Client timestamp | |
-
-#### sGenkinSinyouKubun Values
-
-| Value | Description |
-|-------|-------------|
-| `"0"` | Cash (spot) trading |
-| `"2"` | Margin: new position (system margin) |
-| `"4"` | Margin: new position (general margin) |
-| `"6"` | Margin: new position (day trade margin) |
-
-#### sOrderCondition Values
-
-| Value | Description |
-|-------|-------------|
-| `"0"` | Normal order |
-| `"1"` | Stop order (reverse-limit / 逆指値) |
-| `"2"` | Normal + Stop order combination |
-
-#### sOrderOrderExpireDay Values
-
-| Value | Description |
-|-------|-------------|
-| `"0"` | Day order (valid today only) |
-| `"YYYYMMDD"` | GTC until specified date |
-
-#### sOrderBaibaiKubun Values
-
-| Value | Description |
-|-------|-------------|
-| `"1"` | Sell |
-| `"3"` | Buy |
-
-#### sOrderSizyouC Values (Market Code)
-
-| Value | Description |
-|-------|-------------|
-| `"00"` | TSE (Tokyo Stock Exchange) |
 
 #### Response Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `p_errno` | string | `"0"` = success |
+| `sCLMID` | string | `"CLMKabuNewOrder"` |
 | `sResultCode` | string | `"0"` = success |
 | `sResultText` | string | Result message |
-| `sOrderNumber` | string | Assigned order number |
+| `sWarningCode` | string | Warning code (`"0"` = no warning) |
+| `sWarningText` | string | Warning text |
+| `sOrderNumber` | string | Assigned order number (unique with business day) |
+| `sEigyouDay` | string | Business day `YYYYMMDD` |
+| `sOrderUkewatasiKingaku` | string | Settlement amount |
+| `sOrderTesuryou` | string | Commission |
+| `sOrderSyouhizei` | string | Consumption tax |
+| `sKinri` | string | Interest rate (for margin; `"-"` for spot) |
+| `sOrderDate` | string | Order datetime `YYYYMMDDHHMMSS` |
+
+#### CLMKabuHensaiData (Repayment Data)
+
+When closing margin positions with `sTatebiType = "1"` (individual specification), provide an array `aCLMKabuHensaiData` with the following fields per entry:
+
+| Field | Description |
+|-------|-------------|
+| `sTategyokuNumber` | Position number (from `CLMShinyouTategyokuList.sOrderTategyokuNumber`) |
+| `sTatebiZyuni` | Repayment order priority (ascending from 1) |
+| `sOrderSuryou` | Repayment quantity (shares) |
+
+#### Request Examples
+
+**Spot buy (market, specific account)**:
+```json
+{
+  "sCLMID": "CLMKabuNewOrder",
+  "sZyoutoekiKazeiC": "1",
+  "sIssueCode": "6658",
+  "sSizyouC": "00",
+  "sBaibaiKubun": "3",
+  "sCondition": "0",
+  "sOrderPrice": "0",
+  "sOrderSuryou": "100",
+  "sGenkinShinyouKubun": "0",
+  "sOrderExpireDay": "0",
+  "sGyakusasiOrderType": "0",
+  "sGyakusasiZyouken": "0",
+  "sGyakusasiPrice": "*",
+  "sTatebiType": "*",
+  "sTategyokuZyoutoekiKazeiC": "*",
+  "sSecondPassword": "pswd"
+}
+```
+
+**Spot sell (limit, specific account)**:
+```json
+{
+  "sCLMID": "CLMKabuNewOrder",
+  "sZyoutoekiKazeiC": "1",
+  "sIssueCode": "6658",
+  "sSizyouC": "00",
+  "sBaibaiKubun": "1",
+  "sCondition": "0",
+  "sOrderPrice": "201",
+  "sOrderSuryou": "100",
+  "sGenkinShinyouKubun": "0",
+  "sOrderExpireDay": "0",
+  "sGyakusasiOrderType": "0",
+  "sGyakusasiZyouken": "0",
+  "sGyakusasiPrice": "*",
+  "sTatebiType": "*",
+  "sTategyokuZyoutoekiKazeiC": "*",
+  "sSecondPassword": "pswd"
+}
+```
+
+**Margin close with individual position specification**:
+```json
+{
+  "sCLMID": "CLMKabuNewOrder",
+  "sZyoutoekiKazeiC": "1",
+  "sIssueCode": "4241",
+  "sSizyouC": "00",
+  "sBaibaiKubun": "1",
+  "sCondition": "0",
+  "sOrderPrice": "920",
+  "sOrderSuryou": "200",
+  "sGenkinShinyouKubun": "4",
+  "sOrderExpireDay": "0",
+  "sGyakusasiOrderType": "0",
+  "sGyakusasiZyouken": "0",
+  "sGyakusasiPrice": "*",
+  "sTatebiType": "1",
+  "sTategyokuZyoutoekiKazeiC": "*",
+  "sSecondPassword": "pswd",
+  "aCLMKabuHensaiData": [
+    {"sTategyokuNumber": "202007220000402", "sTatebiZyuni": "1", "sOrderSuryou": "100"},
+    {"sTategyokuNumber": "202007220001591", "sTatebiZyuni": "2", "sOrderSuryou": "100"}
+  ]
+}
+```
+
+**Stop order (buy when price reaches 460, order at 455)**:
+```json
+{
+  "sCLMID": "CLMKabuNewOrder",
+  "sZyoutoekiKazeiC": "1",
+  "sIssueCode": "3632",
+  "sSizyouC": "00",
+  "sBaibaiKubun": "3",
+  "sCondition": "0",
+  "sOrderPrice": "*",
+  "sOrderSuryou": "100",
+  "sGenkinShinyouKubun": "0",
+  "sOrderExpireDay": "0",
+  "sGyakusasiOrderType": "1",
+  "sGyakusasiZyouken": "460",
+  "sGyakusasiPrice": "455",
+  "sTatebiType": "*",
+  "sTategyokuZyoutoekiKazeiC": "*",
+  "sSecondPassword": "pswd"
+}
+```
 
 ### 4.2 CLMKabuCorrectOrder (Order Correction)
 
 **sCLMID**: `"CLMKabuCorrectOrder"`
+**Virtual URL**: `sUrlRequest`
 
 Corrects (amends) an existing open order. Requires the second password.
 
-#### Key Parameters
+#### Request Parameters
 
-| Parameter | Description |
-|-----------|-------------|
-| `sCLMID` | `"CLMKabuCorrectOrder"` |
-| `sOrderNumber` | Order number to correct |
-| `sOrderOrderPrice` | New price |
-| `sOrderOrderSuryou` | New quantity |
-| `sOrderOrderExpireDay` | New expiration |
-| `p_no` | Request sequence number |
-| `p_sd_date` | Client timestamp |
+| Parameter | Type | Required | Description | Values |
+|-----------|------|----------|-------------|--------|
+| `sCLMID` | string | Yes | `"CLMKabuCorrectOrder"` | |
+| `sOrderNumber` | string | Yes | Order number to correct | From CLMKabuNewOrder response |
+| `sEigyouDay` | string | Yes | Business day | From CLMKabuNewOrder response |
+| `sCondition` | string | Yes | Execution condition | `"*"` = no change, `"0"` = none, `"2"` = opening, `"4"` = closing, `"6"` = funari |
+| `sOrderPrice` | string | Yes | Order price | `"*"` = no change, `"0"` = change to market, otherwise new limit price |
+| `sOrderSuryou` | string | Yes | Order quantity | `"*"` = no change, otherwise new quantity (no increase allowed; include partial fills in count) |
+| `sOrderExpireDay` | string | Yes | Order expiration | `"*"` = no change, `"0"` = day, `"YYYYMMDD"` = new date |
+| `sGyakusasiZyouken` | string | Yes | Stop trigger condition | `"*"` = no change, otherwise new trigger price |
+| `sGyakusasiPrice` | string | Yes | Stop order price | `"*"` = no change, `"0"` = market, otherwise new price |
+| `sSecondPassword` | string | Yes | Second password | |
+| `p_no` | string | Yes | Request sequence number | |
+| `p_sd_date` | string | Yes | Client timestamp | |
+
+**Note**: After stop trigger fires, stop condition/price cannot be corrected. Use normal price correction instead.
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMKabuCorrectOrder"` |
+| `sResultCode` | string | See CLMKabuNewOrder |
+| `sResultText` | string | See CLMKabuNewOrder |
+| `sOrderNumber` | string | Echo of request value |
+| `sEigyouDay` | string | Echo of request value |
+| `sOrderUkewatasiKingaku` | string | Settlement amount |
+| `sOrderTesuryou` | string | Commission |
+| `sOrderSyouhizei` | string | Consumption tax |
+| `sOrderDate` | string | Order datetime `YYYYMMDDHHMMSS` |
 
 ### 4.3 CLMKabuCancelOrder (Order Cancellation)
 
 **sCLMID**: `"CLMKabuCancelOrder"`
+**Virtual URL**: `sUrlRequest`
 
-Cancels an existing open order. Also supports batch cancellation (v4r2+).
+Cancels an existing open order.
 
-#### Key Parameters
+#### Request Parameters
 
-| Parameter | Description |
-|-----------|-------------|
-| `sCLMID` | `"CLMKabuCancelOrder"` |
-| `sOrderNumber` | Order number to cancel (or empty for batch cancel) |
-| `p_no` | Request sequence number |
-| `p_sd_date` | Client timestamp |
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMKabuCancelOrder"` |
+| `sOrderNumber` | string | Yes | Order number to cancel (from CLMKabuNewOrder response) |
+| `sEigyouDay` | string | Yes | Business day (from CLMKabuNewOrder response) |
+| `sSecondPassword` | string | Yes | Second password |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
 
-#### Batch Cancel
+#### Response Fields
 
-When `sOrderNumber` is empty or a special batch identifier is used, all open orders are cancelled.
-Added in v4r2 (2022-09-03).
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMKabuCancelOrder"` |
+| `sResultCode` | string | See CLMKabuNewOrder |
+| `sResultText` | string | See CLMKabuNewOrder |
+| `sOrderNumber` | string | Echo of request value |
+| `sEigyouDay` | string | Echo of request value |
+| `sOrderUkewatasiKingaku` | string | Settlement amount |
+| `sOrderDate` | string | Order datetime `YYYYMMDDHHMMSS` |
 
-### 4.4 CLMOrderList (Order List Query)
+### 4.4 CLMKabuCancelOrderAll (Cancel All Orders)
+
+**sCLMID**: `"CLMKabuCancelOrderAll"`
+**Virtual URL**: `sUrlRequest`
+
+Cancels all open orders at once.
+
+#### Request Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMKabuCancelOrderAll"` |
+| `sSecondPassword` | string | Yes | Second password |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMKabuCancelOrderAll"` |
+| `sResultCode` | string | See CLMKabuNewOrder |
+| `sResultText` | string | See CLMKabuNewOrder |
+
+### 4.5 CLMOrderList (Order List Query)
 
 **sCLMID**: `"CLMOrderList"`
+**Virtual URL**: `sUrlRequest`
 
-Retrieves a list of current orders.
+Retrieves a list of current orders with optional filters.
 
-#### Response
+#### Request Parameters
 
-Returns an array of order summary records.
+| Parameter | Type | Required | Description | Values |
+|-----------|------|----------|-------------|--------|
+| `sCLMID` | string | Yes | `"CLMOrderList"` | |
+| `sIssueCode` | string | No | Stock ticker filter | e.g., `"8411"` or `""` for all |
+| `sSikkouDay` | string | No | Execution date (business day) filter | `"YYYYMMDD"` or `""` for all |
+| `sOrderSyoukaiStatus` | string | No | Order status filter | `""` = all, `"1"` = unfilled, `"2"` = fully filled, `"3"` = partial, `"4"` = correctable/cancellable, `"5"` = unfilled + partial |
+| `p_no` | string | Yes | Request sequence number | |
+| `p_sd_date` | string | Yes | Client timestamp | |
 
-### 4.5 CLMOrderListDetail (Order Detail Query)
+**Note**: All filter parameters (except sCLMID) are optional AND-condition filters. The `sSikkouDay` is the order execution scheduled date which changes after the evening day-change processing; it is NOT for retrieving past order history.
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMOrderList"` |
+| `sResultCode` | string | See CLMKabuNewOrder |
+| `sResultText` | string | See CLMKabuNewOrder |
+| `sWarningCode` | string | Warning code |
+| `sWarningText` | string | Warning text |
+| `sIssueCode` | string | Echo of request value |
+| `sSikkouDay` | string | Echo of request value |
+| `sOrderSyoukaiStatus` | string | Echo of request value |
+| `aOrderList` | array | Order list (see below); `""` if no data |
+
+**aOrderList array item fields:**
+
+| Field | Description |
+|-------|-------------|
+| `sOrderWarningCode` | Warning code |
+| `sOrderWarningText` | Warning text |
+| `sOrderOrderNumber` | Order number |
+| `sOrderIssueCode` | Stock ticker |
+| `sOrderSizyouC` | Market code |
+| `sOrderZyoutoekiKazeiC` | Tax account type |
+| `sGenkinSinyouKubun` | Cash/Margin type |
+| `sOrderBensaiKubun` | Repayment type: `"00"` = none, `"26"` = system 6mo, `"29"` = system unlimited, `"36"` = general 6mo, `"39"` = general unlimited |
+| `sOrderBaibaiKubun` | Buy/Sell |
+| `sOrderOrderSuryou` | Order quantity |
+| `sOrderCurrentSuryou` | Effective (remaining) quantity |
+| `sOrderOrderPrice` | Order price |
+| `sOrderCondition` | Execution condition |
+| `sOrderOrderPriceKubun` | Price type: `""` = unused, `"1"` = market, `"2"` = limit, `"3"` = higher than parent, `"4"` = lower than parent |
+| `sOrderGyakusasiOrderType` | Stop order type |
+| `sOrderGyakusasiZyouken` | Stop trigger condition |
+| `sOrderGyakusasiKubun` | Stop price type: `""` = unused, `"0"` = market, `"1"` = limit |
+| `sOrderGyakusasiPrice` | Stop order price |
+| `sOrderTriggerType` | Trigger type: `"0"` = untriggered, `"1"` = auto, `"2"` = manual order, `"3"` = manual expire |
+| `sOrderTatebiType` | Position date type |
+| `sOrderZougen` | Reverse increment (unused) |
+| `sOrderYakuzyouSuryo` | Filled quantity |
+| `sOrderYakuzyouPrice` | Fill price |
+| `sOrderUtidekiKbn` | Partial fill flag: `""` = no split, `"2"` = split |
+| `sOrderSikkouDay` | Execution date `YYYYMMDD` |
+| `sOrderStatusCode` | Status code (see section 8.2) |
+| `sOrderStatus` | Status name text |
+| `sOrderYakuzyouStatus` | Fill status: `"0"` = unfilled, `"1"` = partial, `"2"` = full, `"3"` = filling |
+| `sOrderOrderDateTime` | Order datetime `YYYYMMDDHHMMSS` |
+| `sOrderOrderExpireDay` | Expiration date `YYYYMMDD` |
+| `sOrderKurikosiOrderFlg` | Carryover flag: `"0"` = today, `"1"` = carryover, `"2"` = invalid |
+| `sOrderCorrectCancelKahiFlg` | Correct/cancel allowed: `"0"` = both, `"1"` = neither, `"2"` = cancel only |
+| `sGaisanDaikin` | Estimated trade amount |
+
+### 4.6 CLMOrderListDetail (Order Detail Query)
 
 **sCLMID**: `"CLMOrderListDetail"`
 **Virtual URL**: `sUrlRequest`
@@ -318,7 +542,284 @@ Returns an array of order summary records.
 |-----------|------|----------|-------------|
 | `sCLMID` | string | Yes | `"CLMOrderListDetail"` |
 | `sOrderNumber` | string | Yes | Order number to query |
-| `sEigyouDay` | string | No | Business date `YYYYMMDD` (empty = today) |
+| `sEigyouDay` | string | Yes | Business date `YYYYMMDD` |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
+
+**Note**: All request parameters are required.
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMOrderListDetail"` |
+| `sResultCode` | string | See CLMKabuNewOrder |
+| `sResultText` | string | See CLMKabuNewOrder |
+| `sWarningCode` | string | Warning code |
+| `sWarningText` | string | Warning text |
+| `sOrderNumber` | string | Order number |
+| `sEigyouDay` | string | Business day |
+| `sIssueCode` | string | Stock ticker |
+| `sOrderSizyouC` | string | Market code |
+| `sOrderBaibaiKubun` | string | Buy/Sell |
+| `sGenkinSinyouKubun` | string | Cash/Margin type |
+| `sOrderBensaiKubun` | string | Repayment type |
+| `sOrderCondition` | string | Execution condition |
+| `sOrderOrderPriceKubun` | string | Price type |
+| `sOrderOrderPrice` | string | Order price |
+| `sOrderOrderSuryou` | string | Order quantity |
+| `sOrderCurrentSuryou` | string | Effective quantity |
+| `sOrderStatusCode` | string | Status code (see section 8.2) |
+| `sOrderStatus` | string | Status name |
+| `sOrderOrderDateTime` | string | Order datetime `YYYYMMDDHHMMSS` |
+| `sOrderOrderExpireDay` | string | Expiration date `YYYYMMDD` |
+| `sChannel` | string | Channel: `"F"` = e-Shiten API, `"1"` = Standard Web, etc. |
+| `sGenbutuZyoutoekiKazeiC` | string | Spot account type |
+| `sSinyouZyoutoekiKazeiC` | string | Margin account type |
+| `sGyakusasiOrderType` | string | Stop order type |
+| `sGyakusasiZyouken` | string | Stop trigger condition |
+| `sGyakusasiKubun` | string | Stop price type |
+| `sGyakusasiPrice` | string | Stop price |
+| `sTriggerType` | string | Trigger type |
+| `sTriggerTime` | string | Trigger datetime `YYYYMMDDHHMMSS` |
+| `sUkewatasiDay` | string | Settlement date `YYYYMMDD` |
+| `sYakuzyouPrice` | string | Fill price |
+| `sYakuzyouSuryou` | string | Fill quantity |
+| `sBaiBaiDaikin` | string | Trade amount |
+| `sUtidekiKubun` | string | Partial fill flag |
+| `sGaisanDaikin` | string | Estimated trade amount |
+| `sBaiBaiTesuryo` | string | Commission |
+| `sShouhizei` | string | Consumption tax |
+| `sTatebiType` | string | Position date type |
+| `sSizyouErrorCode` | string | Exchange error code (`""` = OK; see CLMOrderErrReason master) |
+| `sZougen` | string | Reverse increment (unused) |
+| `sOrderAcceptTime` | string | Exchange accept/error time `YYYYMMDDHHMMSS` |
+| `sOrderExpireDayLimit` | string | Order expiration date `YYYYMMDD` |
+| `aYakuzyouSikkouList` | array | Fill/expiration detail list |
+| `aKessaiOrderTategyokuList` | array | Settlement position list (margin) |
+
+**aYakuzyouSikkouList array item fields:**
+
+| Field | Description |
+|-------|-------------|
+| `sYakuzyouWarningCode` | Warning code |
+| `sYakuzyouWarningText` | Warning text |
+| `sYakuzyouSuryou` | Fill quantity |
+| `sYakuzyouPrice` | Fill price |
+| `sYakuzyouDate` | Fill datetime `YYYYMMDDHHMMSS` |
+
+**aKessaiOrderTategyokuList array item fields:**
+
+| Field | Description |
+|-------|-------------|
+| `sKessaiWarningCode` | Warning code |
+| `sKessaiWarningText` | Warning text |
+| `sKessaiTatebiZyuni` | Position priority |
+| `sKessaiTategyokuDay` | Position date `YYYYMMDD` |
+| `sKessaiTategyokuPrice` | Position price |
+| `sKessaiOrderSuryo` | Repayment order quantity |
+| `sKessaiYakuzyouSuryo` | Fill quantity |
+| `sKessaiYakuzyouPrice` | Fill price |
+| `sKessaiTateTesuryou` | Position commission |
+| `sKessaiZyunHibu` | Daily interest |
+| `sKessaiGyakuhibu` | Reverse daily interest |
+| `sKessaiKakikaeryou` | Rewrite fee |
+| `sKessaiKanrihi` | Management fee |
+| `sKessaiKasikaburyou` | Stock lending fee |
+| `sKessaiSonota` | Other fees |
+| `sKessaiSoneki` | Settlement P&L / delivery amount |
+
+---
+
+## 5. Account / Position Queries
+
+### 5.1 CLMGenbutuKabuList (Spot Stock Holdings List)
+
+**sCLMID**: `"CLMGenbutuKabuList"`
+**Virtual URL**: `sUrlRequest`
+
+Retrieves the list of currently held spot (cash) stock positions.
+
+#### Request Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMGenbutuKabuList"` |
+| `sIssueCode` | string | No | Stock ticker (`""` = all holdings, e.g. `"7201"` = single stock) |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
+
+**Note**: Summary totals (outside the list) are returned regardless of the ticker filter.
+
+#### Response Fields (Outer)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMGenbutuKabuList"` |
+| `sResultCode` | string | See CLMKabuNewOrder |
+| `sResultText` | string | See CLMKabuNewOrder |
+| `sWarningCode` | string | Warning code |
+| `sWarningText` | string | Warning text |
+| `sIssueCode` | string | Echo of request value |
+| `sIppanGaisanHyoukagakuGoukei` | string | Estimated valuation total (general account) |
+| `sIppanGaisanHyoukaSonekiGoukei` | string | Estimated P&L total (general account) |
+| `sNisaGaisanHyoukagakuGoukei` | string | Estimated valuation total (NISA account) |
+| `sNisaGaisanHyoukaSonekiGoukei` | string | Estimated P&L total (NISA account) |
+| `sNseityouGaisanHyoukagakuGoukei` | string | Estimated valuation total (NISA Growth account) |
+| `sNseityouGaisanHyoukaSonekiGoukei` | string | Estimated P&L total (NISA Growth account) |
+| `sTokuteiGaisanHyoukagakuGoukei` | string | Estimated valuation total (specific account) |
+| `sTokuteiGaisanHyoukaSonekiGoukei` | string | Estimated P&L total (specific account) |
+| `sTotalGaisanHyoukagakuGoukei` | string | Estimated valuation total (all accounts) |
+| `sTotalGaisanHyoukaSonekiGoukei` | string | Estimated P&L total (all accounts) |
+| `aGenbutuKabuList` | array | Holdings list; `""` if no data |
+
+**aGenbutuKabuList array item fields:**
+
+| Field | Description |
+|-------|-------------|
+| `sUriOrderWarningCode` | Warning code |
+| `sUriOrderWarningText` | Warning text |
+| `sUriOrderIssueCode` | Stock ticker |
+| `sUriOrderZyoutoekiKazeiC` | Tax account type |
+| `sUriOrderZanKabuSuryou` | Remaining shares |
+| `sUriOrderUritukeKanouSuryou` | Sellable shares |
+| `sUriOrderGaisanBokaTanka` | Estimated book value per share |
+| `sUriOrderHyoukaTanka` | Valuation price per share |
+| `sUriOrderGaisanHyoukagaku` | Valuation amount |
+| `sUriOrderGaisanHyoukaSoneki` | Estimated P&L |
+| `sUriOrderGaisanHyoukaSonekiRitu` | Estimated P&L ratio (%) |
+| `sSyuzituOwarine` | Previous day closing price |
+| `sZenzituHi` | Day-over-day change |
+| `sZenzituHiPer` | Day-over-day change (%) |
+| `sUpDownFlag` | Up/down flag: `"01"` = +5.01%+, `"06"` = unchanged, `"11"` = -5.01%- |
+| `sNissyoukinKasikabuZan` | Securities finance lending balance |
+
+### 5.2 CLMShinyouTategyokuList (Margin Position List)
+
+**sCLMID**: `"CLMShinyouTategyokuList"`
+**Virtual URL**: `sUrlRequest`
+
+Retrieves margin (credit) position details.
+
+#### Request Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMShinyouTategyokuList"` |
+| `sIssueCode` | string | No | Stock ticker (`""` = all) |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
+
+**Note**: Summary totals (outside the list) are returned regardless of the ticker filter.
+
+#### Response Fields (Outer)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMShinyouTategyokuList"` |
+| `sResultCode` | string | See CLMKabuNewOrder |
+| `sResultText` | string | See CLMKabuNewOrder |
+| `sWarningCode` | string | Warning code |
+| `sWarningText` | string | Warning text |
+| `sIssueCode` | string | Echo of request value |
+| `sUritateDaikin` | string | Total short position amount |
+| `sKaitateDaikin` | string | Total long position amount |
+| `sTotalDaikin` | string | Total position amount |
+| `sHyoukaSonekiGoukeiUridate` | string | Estimated P&L total (short) |
+| `sHyoukaSonekiGoukeiKaidate` | string | Estimated P&L total (long) |
+| `sTotalHyoukaSonekiGoukei` | string | Total estimated P&L |
+| `sTokuteiHyoukaSonekiGoukei` | string | P&L total (specific account) |
+| `sIppanHyoukaSonekiGoukei` | string | P&L total (general account) |
+| `aShinyouTategyokuList` | array | Position list; `""` if no data |
+
+**aShinyouTategyokuList array item fields:**
+
+| Field | Description |
+|-------|-------------|
+| `sOrderWarningCode` | Warning code |
+| `sOrderWarningText` | Warning text |
+| `sOrderTategyokuNumber` | Position number |
+| `sOrderIssueCode` | Stock ticker |
+| `sOrderSizyouC` | Market: `"00"` = TSE |
+| `sOrderBaibaiKubun` | Buy/Sell |
+| `sOrderBensaiKubun` | Repayment type: `"00"` = none, `"26"` / `"29"` / `"36"` / `"39"` |
+| `sOrderZyoutoekiKazeiC` | Tax account: `"1"` = Specific, `"3"` = General, `"5"` = NISA, `"9"` = Corporate |
+| `sOrderTategyokuSuryou` | Position shares |
+| `sOrderTategyokuTanka` | Position unit price |
+| `sOrderHyoukaTanka` | Valuation unit price |
+| `sOrderGaisanHyoukaSoneki` | Estimated P&L |
+| `sOrderGaisanHyoukaSonekiRitu` | Estimated P&L ratio (%) |
+| `sTategyokuDaikin` | Position trade amount |
+| `sOrderTateTesuryou` | Position commission |
+| `sOrderZyunHibu` | Daily interest |
+| `sOrderGyakuhibu` | Reverse daily interest |
+| `sOrderKakikaeryou` | Rewrite fee |
+| `sOrderKanrihi` | Management fee |
+| `sOrderKasikaburyou` | Stock lending fee |
+| `sOrderSonota` | Other fees |
+| `sOrderTategyokuDay` | Position date `YYYYMMDD` |
+| `sOrderTategyokuKizituDay` | Position expiry date (`"00000000"` = unlimited) |
+| `sTategyokuSuryou` | Position quantity |
+| `sOrderYakuzyouHensaiKabusu` | Filled repayment shares |
+| `sOrderGenbikiGenwatasiKabusu` | Cash receipt/delivery shares |
+| `sOrderOrderSuryou` | Pending order quantity |
+| `sOrderHensaiKanouSuryou` | Repayable quantity |
+| `sSyuzituOwarine` | Previous day closing price |
+| `sZenzituHi` | Day-over-day change |
+| `sZenzituHiPer` | Day-over-day change (%) |
+| `sUpDownFlag` | Up/down flag |
+
+**Important**: After cancelling a margin close-out order, wait and check `CLMShinyouTategyokuList` before placing a new close-out order. Immediate re-submission may cause "no margin position data" error.
+
+### 5.3 CLMZanKaiKanougaku (Buying Power)
+
+**sCLMID**: `"CLMZanKaiKanougaku"`
+**Virtual URL**: `sUrlRequest`
+
+Retrieves current buying power (available cash for trading).
+
+#### Request Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMZanKaiKanougaku"` |
+| `sIssueCode` | string | No | Unused (can be omitted) |
+| `sSizyouC` | string | No | Unused (can be omitted) |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
+
+**Note**: `sIssueCode` and `sSizyouC` are not required. Response fields are retained for compatibility.
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMZanKaiKanougaku"` |
+| `sResultCode` | string | See CLMKabuNewOrder |
+| `sResultText` | string | See CLMKabuNewOrder |
+| `sWarningCode` | string | Warning code |
+| `sWarningText` | string | Warning text |
+| `sIssueCode` | string | Echo of request value |
+| `sSizyouC` | string | Echo of request value |
+| `sSummaryUpdate` | string | Last update datetime `YYYYMMDDHHMM` |
+| `sSummaryGenkabuKaituke` | string | Spot stock buying power |
+| `sSummaryNseityouTousiKanougaku` | string | NISA Growth investment available amount |
+| `sHusokukinHasseiFlg` | string | Shortage flag: `"0"` = none, `"1"` = shortage occurred |
+
+### 5.4 CLMZanShinkiKanoIjiritu (Margin Capacity & Maintenance Ratio)
+
+**sCLMID**: `"CLMZanShinkiKanoIjiritu"`
+**Virtual URL**: `sUrlRequest`
+
+Returns margin capacity and maintenance ratio.
+
+#### Request Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMZanShinkiKanoIjiritu"` |
+| `sIssueCode` | string | No | Unused |
+| `sSizyouC` | string | No | Unused |
 | `p_no` | string | Yes | Request sequence number |
 | `p_sd_date` | string | Yes | Client timestamp |
 
@@ -326,95 +827,377 @@ Returns an array of order summary records.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `sOrderNumber` | string | Order number |
-| `sIssueCode` | string | Stock ticker |
-| `sOrderSizyouC` | string | Market code (`"00"` = TSE) |
-| `sOrderBaibaiKubun` | string | Buy/Sell (`"1"` = Sell, `"3"` = Buy) |
-| `sGenkinSinyouKubun` | string | Cash/Margin (`"0"` = Cash) |
-| `sOrderOrderPriceKubun` | string | Price type (`"1"` = Market, `"2"` = Limit) |
-| `sOrderOrderPrice` | string | Order price |
-| `sOrderOrderSuryou` | string | Order quantity |
-| `sOrderCurrentSuryou` | string | Effective (remaining) quantity |
-| `sOrderStatusCode` | string | Order status code (see section 8.2) |
-| `sOrderOrderExpireDay` | string | Expiration date `YYYYMMDD` |
-| `sYakuzyouPrice` | string | Fill price |
-| `sYakuzyouSuryou` | string | Fill quantity |
-| `sBaiBaiDaikin` | string | Trade amount |
-| `sBaiBaiTesuryo` | string | Commission |
-| `sShouhizei` | string | Consumption tax |
-| `aYakuzyouSikkouList` | array | Fill/expiration detail list |
+| `sCLMID` | string | `"CLMZanShinkiKanoIjiritu"` |
+| `sResultCode` | string | See CLMKabuNewOrder |
+| `sResultText` | string | See CLMKabuNewOrder |
+| `sWarningCode` | string | Warning code |
+| `sWarningText` | string | Warning text |
+| `sIssueCode` | string | Echo of request value |
+| `sSizyouC` | string | Echo of request value |
+| `sSummaryUpdate` | string | Last update datetime `YYYYMMDDHHMM` |
+| `sSummarySinyouSinkidate` | string | New margin position available amount |
+| `sItakuhosyoukin` | string | Margin maintenance ratio (%) |
+| `sOisyouKakuteiFlg` | string | Margin call flag: `"0"` = undetermined, `"1"` = confirmed |
 
-### 4.6 Fill Summary / Fill Detail Query
+### 5.5 CLMZanUriKanousuu (Sellable Quantity)
 
-#### CLMYakuzyouSummary (Fill Summary)
+**sCLMID**: `"CLMZanUriKanousuu"`
+**Virtual URL**: `sUrlRequest`
 
-**sCLMID**: `"CLMYakuzyouSummary"` (estimated)
+Returns the quantity of shares available for sale, broken down by account type.
 
-#### CLMYakuzyouDetail (Fill Detail)
+#### Request Parameters
 
-Queries fill (execution) details.
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMZanUriKanousuu"` |
+| `sIssueCode` | string | Yes | Stock ticker (e.g., `"6501"`) |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
 
----
+#### Response Fields
 
-## 5. Account / Position Queries
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMZanUriKanousuu"` |
+| `sResultCode` | string | See CLMKabuNewOrder |
+| `sResultText` | string | See CLMKabuNewOrder |
+| `sWarningCode` | string | Warning code |
+| `sWarningText` | string | Warning text |
+| `sIssueCode` | string | Echo of request value |
+| `sSummaryUpdate` | string | Last update datetime `YYYYMMDDHHMM` |
+| `sZanKabuSuryouUriKanouIppan` | string | Sellable shares (general account) |
+| `sZanKabuSuryouUriKanouTokutei` | string | Sellable shares (specific account) |
+| `sZanKabuSuryouUriKanouNisa` | string | Sellable shares (NISA) |
+| `sZanKabuSuryouUriKanouNseityou` | string | Sellable shares (NISA Growth) |
 
-### 5.1 Spot Holdings List (現物保有銘柄一覧)
+### 5.6 CLMZanKaiSummary (Account Summary)
 
-**sCLMID**: `"CLMGenbutuHoyuuList"` (estimated)
+**sCLMID**: `"CLMZanKaiSummary"`
+**Virtual URL**: `sUrlRequest`
 
-Retrieves the list of currently held spot (cash) stock positions.
+Returns a comprehensive summary of account status including buying power, margin status, order/fill counts, and deficit information.
 
-### 5.2 Margin Positions List (信用建玉一覧)
+**Important**: Do NOT poll this endpoint. Use EVENT I/F for fill notifications, then query account status only when triggered.
 
-**sCLMID**: `"CLMShinyouTategyokuList"`
+#### Request Parameters
 
-Retrieves margin (credit) position details. Important to check `sHensaiKanouSuryou` (repayable quantity) before placing close-out orders.
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMZanKaiSummary"` |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
 
-**Important**: After cancelling a margin close-out order, wait and check `CLMShinyouTategyokuList` before placing a new close-out order. Immediate re-submission may cause "信用建玉明細にデータなし" error (see FAQ Q9).
+#### Response Fields
 
-### 5.3 Buying Power (買余力)
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMZanKaiSummary"` |
+| `sResultCode` | string | See CLMKabuNewOrder |
+| `sResultText` | string | See CLMKabuNewOrder |
+| `sWarningCode` | string | Warning code |
+| `sWarningText` | string | Warning text |
+| `sUpdateDate` | string | Last update datetime `YYYYMMDDHHMM` |
+| `sOisyouHasseiFlg` | string | Margin call flag: `"0"` = none, `"1"` = occurred |
+| `sOhzsKeisanDay` | string | Margin call calculation date `YYYYMMDD` |
+| `sOhzsGenkinHosyoukin` | string | Cash collateral |
+| `sOhzsDaiyouHyoukagaku` | string | Substitute securities valuation |
+| `sOhzsSasiireHosyoukin` | string | Deposited collateral |
+| `sOhzsHyoukaSoneki` | string | P&L |
+| `sOhzsSyokeihi` | string | Miscellaneous expenses |
+| `sOhzsMiukeKessaiSon` | string | Unsettled settlement loss |
+| `sOhzsMiukeKessaiEki` | string | Unsettled settlement profit |
+| `sOhzsUkeireHosyoukin` | string | Received collateral |
+| `sOhzsTatekabuDaikin` | string | Position trade amount |
+| `sOhzsItakuHosyoukinRitu` | string | Margin maintenance ratio (%) |
+| `sTatekaekinHasseiFlg` | string | Advance payment flag: `"0"` = none, `"1"` = occurred |
+| `sThzNyukinKigenDay` | string | Payment deadline `YYYYMMDD` |
+| `sThzSeisangaku` | string | Settlement amount |
+| `sThzHibakariKousokukin` | string | Day trade restricted amount |
+| `sThzHurikaegaku` | string | Transfer amount |
+| `sThzHituyouNyukingaku` | string | Required deposit amount |
+| `sThzKakuteiFlg` | string | Confirmed flag |
+| `sGenbutuKabuKaituke` | string | Spot stock buying power |
+| `sSinyouSinkidate` | string | New margin position available amount |
+| `sSinyouGenbiki` | string | Cash receipt available amount |
+| `sHosyouKinritu` | string | Margin maintenance ratio (%) |
+| `sNseityouTousiKanougaku` | string | NISA Growth investment available |
+| `sTousinKaituke` | string | Investment trust buying power |
+| `sRuitouKaituke` | string | MMF/China Fund buying power |
+| `sIPOKounyu` | string | IPO purchase available |
+| `sSyukkin` | string | Withdrawable amount |
+| `sFusokugaku` | string | Shortage amount |
+| `sLargeKaidateYoryoku` | string | Futures long capacity |
+| `sMiniKaidateYoryoku` | string | OP put sell capacity (mini) |
+| `sLargeUridateYoryoku` | string | Futures short capacity |
+| `sMiniUridateYoryoku` | string | OP call sell capacity (mini) |
+| `sOpKaidateYoryokyu` | string | Options new long capacity |
+| `sSyoukokinFusokugaku` | string | Margin shortage amount (today's claim) |
+| `sGenbutuBaibaiDaikin` | string | Spot trade amount |
+| `sGenbutuOrderCount` | string | Spot order count |
+| `sGenbutuYakuzyouCount` | string | Spot fill count |
+| `sSinyouBaibaiDaikin` | string | Margin trade amount |
+| `sSinyouOrderCount` | string | Margin order count |
+| `sSinyouYakuzyouCount` | string | Margin fill count |
+| `sSakiBaibaiDaikin` | string | Futures trade amount |
+| `sSakiOrderCount` | string | Futures order count |
+| `sSakiYakuzyouCount` | string | Futures fill count |
+| `sOpBaibaiDaikin` | string | Options trade amount |
+| `sOpOrderCount` | string | Options order count |
+| `sOpYakuzyouCount` | string | Options fill count |
+| `aHikazeiKouzaList` | array | Tax-exempt account list |
+| `aOisyouHasseiZyoukyouList` | array | Margin call occurrence list |
+| `aHosyoukinSeikyuZyoukyouList` | array | Margin claim occurrence list |
 
-**sCLMID**: `"CLMKaiYoryoku"` (estimated)
+**aHikazeiKouzaList array item fields:**
 
-Retrieves current buying power (available cash for trading).
+| Field | Description |
+|-------|-------------|
+| `sHikazeiTekiyouYear` | Applicable year `YYYY` |
+| `sSeityouTousiKanougaku` | Growth investment available amount |
 
-### 5.4 Margin Capacity & Maintenance Ratio (建余力＆本日維持率)
+**aOisyouHasseiZyoukyouList array item fields:**
 
-**sCLMID**: `"CLMTateYoryoku"` (estimated)
+| Field | Description |
+|-------|-------------|
+| `sOhzHasseiDay` | Occurrence date `YYYYMMDD` |
+| `sOhzHosyoukinRitu` | Margin ratio (%) |
+| `sOhzNyukinKigenDay` | Payment deadline `YYYYMMDDHHMM` |
+| `sOhzOisyouKingaku` | Margin call amount |
+| `sOhzKakuteiFlg` | Confirmed flag |
+| `sOhzHosyoukinZougen` | Margin change |
+| `sOhzNyukin` | Deposit |
+| `sOhzTategyokuKessai` | Position settlement |
+| `sOhzKessaisonNyukin` | Settlement loss deposit |
+| `sOhzMikaisyouKingaku` | Unresolved amount |
+| `sOhzMikaisyouKingakuFlg` | Unresolved amount flag (unused) |
 
-Returns margin capacity and today's maintenance ratio.
+### 5.7 CLMZanKaiKanougakuSuii (Buying Power History)
 
-### 5.5 Sellable Quantity (売却可能数量)
+**sCLMID**: `"CLMZanKaiKanougakuSuii"`
+**Virtual URL**: `sUrlRequest`
 
-**sCLMID**: `"CLMBaikyakuKanouSuryou"` (estimated)
+Returns the history/trend of available trading amounts over 6 business days.
 
-Returns the quantity of shares available for sale.
+#### Request Parameters
 
-### 5.6 Available Amount Summary (可能額サマリー)
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMZanKaiKanougakuSuii"` |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
 
-**sCLMID**: `"CLMKanougakuSummary"` (estimated)
+#### Response Fields
 
-Returns a summary of available trading amounts.
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMZanKaiKanougakuSuii"` |
+| `sResultCode` | string | See CLMKabuNewOrder |
+| `sResultText` | string | See CLMKabuNewOrder |
+| `sWarningCode` | string | Warning code |
+| `sWarningText` | string | Warning text |
+| `sUpdateDate` | string | Last update datetime `YYYYMMDDHHMM` |
+| `sNearaiKubun` | string | Valuation status: `"0"` = stopped, `"1"` = in progress, `"2"` = complete |
+| `aKanougakuSuiiList` | array | Available amount list (6 entries: [0]=today, [1]=2nd day, ... [5]=6th day) |
 
-**Important**: Do NOT poll this endpoint. Use EVENT I/F for fill notifications, then query account status only when triggered (see FAQ Q12).
+**aKanougakuSuiiList array item fields:**
 
-### 5.7 Available Amount History (可能額推移)
+| Field | Description |
+|-------|-------------|
+| `sHituke` | Date `YYYYMMDD` |
+| `sAzukariKin` | Deposit balance |
+| `sHattyuZyutoukin` | Outstanding order allocated amount |
+| `sHibakariKousokukin` | Day trade restricted amount |
+| `sSonotaKousokukin` | Other restricted amounts |
+| `sGenkinHosyoukin` | Cash collateral |
+| `sDaiyouHyoukagaku` | Substitute securities valuation |
+| `sSasiireHosyoukin` | Deposited collateral |
+| `sSinyouTateHyoukaSon` | Margin position valuation loss |
+| `sSinyouTateHyoukaEki` | Margin position valuation profit |
+| `sSinyouTadeSyoukeihi` | Margin position miscellaneous expenses |
+| `sMiukewatasiKessaiSon` | Unsettled settlement loss |
+| `sMiukewatasiKessaiEki` | Unsettled settlement profit |
+| `sUkeireHosyoukin` | Received collateral |
+| `sMikessaiTateDaikin` | Unsettled position amount |
+| `sGenbikiWatasiTateDaikin` | Cash receipt/delivery position amount |
+| `sHituyouHosyoukin` | Required collateral |
+| `sHituyouGenkinHosyoukin` | Required cash collateral |
+| `sHosyoukinYoryoku` | Collateral margin |
+| `sGenkinHosyoukinYoryoku` | Cash collateral margin |
+| `sItakuHosyoukinRitu` | Margin maintenance ratio (%) |
+| `sHosyoukinHikidasiKousokukin` | Collateral withdrawal restriction |
+| `sHosyoukinHikidasiYoryoku` | Collateral withdrawal margin |
+| `sOisyouHituyouHosyoukin` | Margin call required collateral |
+| `sOisyouYoryoku` | Margin call margin |
+| `sFusokugaku` | Shortage amount |
+| `sGenbutuKaitukeKanougaku` | Spot stock buying power |
+| `sSinyouSinkidateKanougaku` | New margin position available |
+| `sGenbikiKanougaku` | Cash receipt available |
+| `sTousinKaitukeKanougaku` | Investment trust buying power |
+| `sSyukkinKanougaku` | Withdrawable amount |
 
-**sCLMID**: `"CLMKanougakuSuii"` (estimated)
+### 5.8 CLMZanKaiGenbutuKaitukeSyousai (Spot Stock Purchase Available Amount Detail)
 
-Returns the history/trend of available trading amounts.
-
-### 5.8 Spot Stock Purchase Available Amount Detail (現物株式買付可能額詳細)
+**sCLMID**: `"CLMZanKaiGenbutuKaitukeSyousai"`
+**Virtual URL**: `sUrlRequest`
 
 Detailed breakdown of available amount for spot stock purchases.
 
-### 5.9 Margin New Position Available Amount Detail (信用新規建て可能額詳細)
+#### Request Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMZanKaiGenbutuKaitukeSyousai"` |
+| `sHitukeIndex` | string | Yes | Date index: `"3"` = 4th business day, `"4"` = 5th, `"5"` = 6th |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMZanKaiGenbutuKaitukeSyousai"` |
+| `sResultCode` | string | See CLMKabuNewOrder |
+| `sResultText` | string | See CLMKabuNewOrder |
+| `sWarningCode` | string | Warning code |
+| `sWarningText` | string | Warning text |
+| `sHitukeIndex` | string | Echo of request value |
+| `sHituke` | string | Specified date `YYYYMMDD` |
+| `sGenkinHosyoukin` | string | Cash collateral |
+| `sHosyoukinGenbutuKaitukeKanouga` | string | Spot buying power from collateral |
+| `sGenbutuKaitukeKanougaku` | string | Spot stock buying power |
+| `sAzukariKin` | string | Deposit balance |
+| `sHattyuZyutoukin` | string | Outstanding order allocated amount |
+| `sHibakariKousokukin` | string | Day trade restricted amount |
+| `sSonotaKousokukin` | string | Other restricted amounts |
+| `sHituyouGenkinHosyoukin` | string | Required cash collateral |
+| `sDaiyouHyoukagaku` | string | Substitute securities valuation |
+| `sTatekabuHyoukaSoneki` | string | Position P&L |
+| `sTatekabuSyoukeihi` | string | Position miscellaneous expenses |
+| `sMiukewatasiKessaiSon` | string | Unsettled settlement loss |
+| `sMiukewatasiKessaiEki` | string | Unsettled settlement profit |
+| `sUkeireHosyoukin` | string | Received collateral |
+| `sHituyouHosyoukin` | string | Required collateral |
+| `sHosyoukinYoryoku` | string | Collateral margin |
+
+### 5.9 CLMZanKaiSinyouSinkidateSyousai (Margin New Position Available Amount Detail)
+
+**sCLMID**: `"CLMZanKaiSinyouSinkidateSyousai"`
+**Virtual URL**: `sUrlRequest`
 
 Detailed breakdown of available amount for new margin positions.
 
-### 5.10 Real-time Margin Rate (リアル保証金率)
+#### Request Parameters
 
-Real-time margin guarantee rate.
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMZanKaiSinyouSinkidateSyousai"` |
+| `sHitukeIndex` | string | Yes | Date index: `"0"`-`"5"` (1st through 6th business day) |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMZanKaiSinyouSinkidateSyousai"` |
+| `sResultCode` | string | See CLMKabuNewOrder |
+| `sResultText` | string | See CLMKabuNewOrder |
+| `sWarningCode` | string | Warning code |
+| `sWarningText` | string | Warning text |
+| `sHitukeIndex` | string | Echo of request value |
+| `sHituke` | string | Specified date `YYYYMMDD` |
+| `sUkeireHosyoukin` | string | Received collateral |
+| `sHituyouHosyoukin` | string | Required collateral |
+| `sHosyoukinYoryoku` | string | Collateral margin |
+| `sHosyoukinTyousyuRitu` | string | Collateral collection ratio (%) |
+| `sSinyouSinkidateKanougaku` | string | New margin position available |
+| `sAzukariKin` | string | Deposit balance |
+| `sHattyuZyutoukin` | string | Outstanding order allocated amount |
+| `sSonotaKousokukin` | string | Other restricted amounts |
+| `sGenkinHosyoukin` | string | Cash collateral |
+| `sDaiyouHyoukagaku` | string | Substitute securities valuation |
+| `sHattyuDaiyouHyoukagaku` | string | Spot buy order substitute securities valuation |
+| `sSasiireHosyoukin` | string | Deposited collateral |
+| `sSinkiTesuryou` | string | New position commission |
+| `sHibuGyakuhibuKousokukin` | string | Daily/reverse interest restricted amount |
+| `sHibuGyakuhibuSyueki` | string | Daily/reverse interest income |
+| `sSonotaTateSyokeihi` | string | Other uncollected expenses |
+| `sSinyouTadeSyoukeihi` | string | Position miscellaneous expenses |
+| `sSinyouTateHyoukaSon` | string | Position valuation loss |
+| `sSinyouTateHyoukaEki` | string | Position valuation profit |
+| `sTatekabuHyoukaSoneki` | string | Position P&L |
+| `sMiukewatasiKessaiSon` | string | Unsettled settlement loss |
+| `sMiukewatasiKessaiEki` | string | Unsettled settlement profit |
+| `sSaiteiHituyouHosyoukin` | string | Minimum required collateral |
+| `sHosyoukin` | string | Position required collateral |
+| `sHattyuHosyoukin` | string | Order required collateral |
+| `sGenbikiWatasiHosyoukin` | string | Cash receipt/delivery required collateral |
+| `sMikessaiGenkinHosyoukin` | string | Position required cash collateral |
+| `sHattyuGenkinHosyoukin` | string | Order required cash collateral |
+| `sGenbwGenkinHosyoukin` | string | Cash receipt/delivery required cash collateral |
+| `sHituyouGenkinHosyoukin` | string | Required cash collateral |
+| `sHosyoukinRitu` | string | Collateral ratio (%) |
+| `sHosyoukinIziRitu` | string | Collateral maintenance ratio (%) |
+| `sHosyoukinRituIziYoryoku` | string | Collateral ratio maintenance margin |
+| `sHosyoukinIzirituIziYoryoku` | string | Collateral maintenance ratio margin |
+| `sMikessaiTateDaikin` | string | Unsettled position amount |
+| `sHattyuTateDaikin` | string | Order position amount |
+| `sGenbikiWatasiTateDaikin` | string | Cash receipt/delivery position amount |
+| `sItakuHosyoukinRitu` | string | Margin maintenance ratio (%) |
+| `sTouzituKessaiSon` | string | Today's settlement loss |
+| `sTouzituKessaiEki` | string | Today's settlement profit |
+| `sKessaiTotalToday` | string | Today's settlement P&L total |
+| `sTouzituKessaiZenHyouka` | string | Today's settlement previous day valuation |
+| `sUkewatasiTategyokuSon` | string | Specified day settlement loss |
+| `sUkewatasiTategyokuEki` | string | Specified day settlement profit |
+| `sKessaiTotalSiteibi` | string | Specified day settlement P&L cumulative |
+
+### 5.10 CLMZanRealHosyoukinRitu (Real-time Margin Ratio)
+
+**sCLMID**: `"CLMZanRealHosyoukinRitu"`
+**Virtual URL**: `sUrlRequest`
+
+Real-time margin guarantee rate with comparison values (T+0 and T+5 perspectives).
+
+#### Request Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMZanRealHosyoukinRitu"` |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMZanRealHosyoukinRitu"` |
+| `sResultCode` | string | See CLMKabuNewOrder |
+| `sResultText` | string | See CLMKabuNewOrder |
+| `sWarningCode` | string | Warning code |
+| `sWarningText` | string | Warning text |
+| `sSasiireHosyoukin` | string | Deposited collateral |
+| `sHyoukaSonEki` | string | P&L |
+| `sUkeireHosyoukin` | string | Received collateral |
+| `sTateKabuDaikin` | string | Position amount |
+| `sItakuHosyoukinRitu` | string | Margin maintenance ratio (%) |
+| `sOisyouHituyouHosyoukin` | string | Margin call required collateral |
+| `sOisyouYoryoku` | string | Margin call margin |
+| `sT0SasiireHosyoukin` | string | [T+0] Deposited collateral |
+| `sT0HyoukaSonEki` | string | [T+0] P&L |
+| `sT0UkeireHosyoukin` | string | [T+0] Received collateral |
+| `sT0TateKabuDaikin` | string | [T+0] Position amount |
+| `sT0ItakuHosyoukinRitu` | string | [T+0] Margin ratio (%) |
+| `sT0OisyouHituyouHosyoukin` | string | [T+0] Margin call required collateral |
+| `sT0OisyouYoryoku` | string | [T+0] Margin call margin |
+| `sT5SasiireHosyoukin` | string | [T+5] Deposited collateral |
+| `sT5HyoukaSonEki` | string | [T+5] P&L |
+| `sT5UkeireHosyoukin` | string | [T+5] Received collateral |
+| `sT5TateKabuDaikin` | string | [T+5] Position amount |
+| `sT5ItakuHosyoukinRitu` | string | [T+5] Margin ratio (%) |
+| `sT5OisyouHituyouHosyoukin` | string | [T+5] Margin call required collateral |
+| `sT5OisyouYoryoku` | string | [T+5] Margin call margin |
 
 ---
 
@@ -422,115 +1205,371 @@ Real-time margin guarantee rate.
 
 Master data is accessed via `sUrlMaster` virtual URL.
 
-### 6.1 Master Data Download (マスタ情報ダウンロード)
+### 6.1 CLMEventDownload (Master Data Download)
+
+**sCLMID**: `"CLMEventDownload"`
 
 A streaming download mechanism (not standard request-response). After the initial request, the server continuously sends records until download is complete, then sends update records as they occur during the trading day.
+
+#### Request Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMEventDownload"` |
+| `sTargetCLMID` | string | No | Comma-separated list of target master data IDs. Empty = all masters. |
+
+**Available sTargetCLMID values:**
+- `CLMSystemStatus` - System status
+- `CLMDateZyouhou` - Date information
+- `CLMYobine` - Tick size (price increments)
+- `CLMUnyouStatus` - Operation status by state
+- `CLMUnyouStatusKabu` - Stock market operation status
+- `CLMUnyouStatusHasei` - Derivative market operation status
+- `CLMIssueMstKabu` - Stock issue master
+- `CLMIssueSizyouMstKabu` - Stock issue-market master
+- `CLMIssueSizyouKiseiKabu` - Stock issue-market regulations
+- `CLMIssueMstSak` - Futures issue master
+- `CLMIssueMstOp` - Options issue master
+- `CLMIssueSizyouKiseiHasei` - Derivative issue-market regulations
+- `CLMDaiyouKakeme` - Substitute collateral rate
+- `CLMHosyoukinMst` - Margin requirement master
+- `CLMOrderErrReason` - Exchange error/reason codes
+- `CLMEventDownloadComplete` - Download complete marker
 
 **Characteristics**:
 - Takes approximately 40 seconds to complete initial download
 - Can be run in parallel with other virtual URLs
 - Multiple master downloads can run in parallel with each other
 - Continues streaming until client disconnects or logs out
+- This is a streaming request; no response is returned. Data is delivered until `CLMEventDownloadComplete` is received.
 
-#### Available Master Data Types
-
-| Master Type | Description |
-|-------------|-------------|
-| System Status | e-Shiten system operational status |
-| Date Information | Business dates, holidays |
-| Tick Size (呼値) | Price tick increments |
-| Operation Status by State | System operation status details |
-| Operation Status (Stocks) | Stock market operation status |
-| Operation Status (Derivatives) | Derivative market operation status |
-| Stock Issue Master (株式銘柄マスタ) | Stock ticker master data |
-| Stock Issue-Market Master (株式銘柄市場マスタ) | Stock ticker per-market data |
-| Stock Issue-Market Regulations (株式銘柄別・市場別規制) | Per-stock per-market trading restrictions |
-| Futures Issue Master (先物銘柄マスタ) | Futures contract master |
-| Options Issue Master (オプション銘柄マスタ) | Options contract master |
-| Derivative Issue-Market Regulations (派生銘柄別・市場別規制) | Derivative trading restrictions |
-| Substitute Collateral Rate (代用掛目) | Collateral valuation rates |
-| Margin Master (保証金マスタ) | Margin requirement master |
-| Exchange Error Codes (取引所エラー等理由コード) | Exchange error/reason codes |
+**Example**: To download only stock master, specify `sTargetCLMID = "CLMIssueMstKabu,CLMEventDownloadComplete"` and disconnect after receiving `CLMEventDownloadComplete`.
 
 #### Master Data Notes (v4r4+)
 
 - Excluded from stock master download: OTC stocks (market code `09`)
 - Excluded from futures/options: expired contracts (delivery month < business month)
-- TSE-only for certain fields: `代用証券評価単価` (stock master), `値幅下限/上限/前日終値` (market master) - non-TSE markets return empty strings
+- TSE-only for certain fields: substitute securities valuation price (stock master), price range limits/previous close (market master) -- non-TSE markets return empty strings
+- For fields without explicit value definitions, empty string or `"0"` means "no value"
 
-### 6.2 Master Data Query (マスタ情報問合取得)
+### 6.2 CLMMfdsGetMasterData (Master Data Query)
+
+**sCLMID**: `"CLMMfdsGetMasterData"` (v4r2+)
+**Virtual URL**: `sUrlMaster`
 
 A request-response API that allows querying specific master data items. More efficient than full download when only specific data is needed.
 
-**sCLMID**: `"CLMMfdsGetMasterData"` (v4r2+)
+#### Request Parameters
 
-#### Available Query Targets
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMMfdsGetMasterData"` |
+| `sTargetCLMID` | string | Yes | Comma-separated list of target master IDs |
+| `sTargetColumn` | string | No | Comma-separated list of fields to return (`""` = all fields) |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
 
-| Target | Description |
-|--------|-------------|
-| Date Information | Business dates |
-| Stock Issue Master | Stock ticker data |
-| Stock Issue-Market Master | Per-market stock data |
-| Futures Issue Master | Futures data |
-| Options Issue Master | Options data |
-| Other (Index etc.) Issue Master | Index/other instrument data |
-| Exchange Error Codes | Error reason codes |
+**Available sTargetCLMID values:**
+- `CLMIssueMstKabu` - Stock issue master
+- `CLMIssueSizyouMstKabu` - Stock issue-market master
+- `CLMIssueMstSak` - Futures issue master
+- `CLMIssueMstOp` - Options issue master
+- `CLMIssueMstOther` - Other (index + FX) issue master (unique to API)
+- `CLMIssueMstIndex` - Index issue master (separate from Other)
+- `CLMIssueMstFx` - FX issue master (separate from Other)
+- `CLMOrderErrReason` - Exchange error codes
+- `CLMDateZyouhou` - Date information
 
-### 6.3 News Header Query (ニュースヘッダー問合取得)
+**Note**: `CLMIssueMstOther` returns both index and FX data. `CLMIssueMstIndex` and `CLMIssueMstFx` allow fetching them individually.
+
+#### Response
+
+Returns arrays of matching master data records with the requested fields. Field definitions follow the same structure as `CLMEventDownload` master data.
+
+### 6.3 CLMMfdsGetNewsHead (News Header Query)
 
 **sCLMID**: `"CLMMfdsGetNewsHead"` (v4r4+)
+**Virtual URL**: `sUrlMaster`
 
 Retrieves news headline/header information.
 
-### 6.4 News Body Query (ニュースボディー問合取得)
+#### Request Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMMfdsGetNewsHead"` |
+| `p_CG` | string | No | Category code (single) |
+| `p_IS` | string | No | Stock ticker code (single) |
+| `p_DT_FROM` | string | No | Date range start `YYYYMMDD` |
+| `p_DT_TO` | string | No | Date range end `YYYYMMDD` |
+| `p_REC_OFST` | string | No | Record offset (default: 0 = most recent) |
+| `p_REC_LIMT` | string | No | Max record count (default: 100, max: 100) |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
+
+**Note**: All parameters except sCLMID are optional AND-condition filters. Results are sorted by news ID descending (newest first).
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMMfdsGetNewsHead"` |
+| `p_REC_MAX` | string | Total matching record count (not array size) |
+| `aCLMMfdsNewsHead` | array | News header list |
+
+**aCLMMfdsNewsHead array item fields:**
+
+| Field | Description |
+|-------|-------------|
+| `p_ID` | News ID (unique identifier) |
+| `p_DT` | News date `YYYYMMDD` |
+| `p_TM` | News time `HHMMSS` |
+| `p_CGL` | Category list (pipe-delimited) |
+| `p_GNL` | Genre list (pipe-delimited) |
+| `p_ISL` | Related stock code list (pipe-delimited) |
+| `p_HDL` | Headline (Shift-JIS BASE64 encoded) |
+
+### 6.4 CLMMfdsGetNewsBody (News Body Query)
 
 **sCLMID**: `"CLMMfdsGetNewsBody"` (v4r4+)
+**Virtual URL**: `sUrlMaster`
 
 Retrieves full news article body text.
 
-### 6.5 Issue Detail Query (銘柄詳細情報問合取得)
+#### Request Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMMfdsGetNewsBody"` |
+| `p_ID` | string | Yes | News ID (from CLMMfdsGetNewsHead) |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMMfdsGetNewsBody"` |
+| `p_ID` | string | Echo of request value |
+| `aCLMMfdsNewsBody` | array | News body list |
+
+**aCLMMfdsNewsBody array item fields:**
+
+| Field | Description |
+|-------|-------------|
+| `p_ID` | News ID |
+| `p_DT` | News date `YYYYMMDD` |
+| `p_TM` | News time `HHMMSS` |
+| `p_CGL` | Category list (pipe-delimited) |
+| `p_GNL` | Genre list (pipe-delimited) |
+| `p_ISL` | Related stock code list (pipe-delimited) |
+| `p_HDL` | Headline (Shift-JIS BASE64 encoded) |
+| `p_TX` | Body text (Shift-JIS BASE64 encoded) |
+
+### 6.5 CLMMfdsGetIssueDetail (Issue Detail Query)
 
 **sCLMID**: `"CLMMfdsGetIssueDetail"` (v4r6+)
+**Virtual URL**: `sUrlMaster`
 
-Retrieves detailed information about a specific stock issue.
+Retrieves detailed fundamental information about specific stocks.
 
-### 6.6 Securities Finance Balance Query (証金残情報問合取得)
+#### Request Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMMfdsGetIssueDetail"` |
+| `sTargetIssueCode` | string | Yes | Comma-separated stock codes (max 120) |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMMfdsGetIssueDetail"` |
+| `aCLMMfdsIssueDetail` | array | Detail list |
+
+**aCLMMfdsIssueDetail array item fields:**
+
+| Field | Description |
+|-------|-------------|
+| `sIssueCode` | Stock ticker |
+| `pBPSB` | BPS (actual) / per-share assets |
+| `pCLOE` | Ex-dividend date (full year) `YYYY/MM/DD` |
+| `pEPSF` | EPS (forecast) / per-share earnings |
+| `pEXRD` | Last ex-date (non-fiscal) `YYYY/MM/DD` |
+| `pIDVE` | Ex-dividend date (interim) `YYYY/MM/DD` |
+| `pROEL` | ROE (forecast) |
+| `pRPER` | PER (forecast, consolidated priority) |
+| `pSPBR` | PBR (actual, simple) |
+| `pSPRO` | Earnings yield (forecast, simple) |
+| `pSYIE` | Dividend yield (forecast, simple) |
+| `pYHPD` | YTD high date `YYYY/MM/DD` |
+| `pYHPR` | YTD high price |
+| `pYLPD` | YTD low date `YYYY/MM/DD` |
+| `pYLPR` | YTD low price |
+
+### 6.6 CLMMfdsGetSyoukinZan (Securities Finance Balance Query)
 
 **sCLMID**: `"CLMMfdsGetSyoukinZan"` (v4r6+)
+**Virtual URL**: `sUrlMaster`
 
-Retrieves securities finance (日証金) balance information.
+Retrieves securities finance (Nisshokin) balance information.
 
-### 6.7 Margin Balance Query (信用残情報問合取得)
+#### Request Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMMfdsGetSyoukinZan"` |
+| `sTargetIssueCode` | string | Yes | Comma-separated stock codes (max 120) |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMMfdsGetSyoukinZan"` |
+| `aCLMMfdsSyoukinZan` | array | Balance list |
+
+**aCLMMfdsSyoukinZan array item fields:**
+
+| Field | Description |
+|-------|-------------|
+| `sIssueCode` | Stock ticker |
+| `pSFC6` | Net balance day-over-day change |
+| `pSFD` | Update date `YYYY/MM/DD` |
+| `pSFD6` | Turnover days |
+| `pSFF6` | Lending balance |
+| `pSFG6` | Lending day-over-day change |
+| `pSFKS` | Status: `"1"` = preliminary, `"2"` = final |
+| `pSFL6` | Lending new |
+| `pSFN6` | (additional lending fields) |
+
+### 6.7 CLMMfdsGetShinyouZan (Margin Balance Query)
 
 **sCLMID**: `"CLMMfdsGetShinyouZan"` (v4r6+)
+**Virtual URL**: `sUrlMaster`
 
 Retrieves credit/margin trading balance information.
 
-### 6.8 Reverse Daily Interest Query (逆日歩情報問合取得)
+#### Request Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMMfdsGetShinyouZan"` |
+| `sTargetIssueCode` | string | Yes | Comma-separated stock codes (max 120) |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
+
+### 6.8 CLMMfdsGetHibuInfo (Reverse Daily Interest Query)
 
 **sCLMID**: `"CLMMfdsGetHibuInfo"` (v4r6+)
+**Virtual URL**: `sUrlMaster`
 
-Retrieves reverse daily interest (逆日歩 / premium charge for short selling) information.
+Retrieves reverse daily interest (premium charge for short selling) information.
 
-### 6.9 Market Price Query (時価情報問合取得)
+#### Request Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMMfdsGetHibuInfo"` |
+| `sTargetIssueCode` | string | Yes | Comma-separated stock codes (max 120) |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMMfdsGetHibuInfo"` |
+| `aCLMMfdsHibuInfo` | array | Reverse daily interest list |
+
+**aCLMMfdsHibuInfo array item fields:**
+
+| Field | Description |
+|-------|-------------|
+| `sIssueCode` | Stock ticker |
+| `pBWRQ` | Reverse daily interest value |
+
+### 6.9 CLMMfdsGetMarketPrice (Market Price Query)
 
 **sCLMID**: `"CLMMfdsGetMarketPrice"` (v4r2+)
 **Virtual URL**: `sUrlPrice`
 
 Retrieves current market prices for specified stocks. Supports up to **120 stock codes** per request.
 
-Available data items correspond to the PC stock board display fields.
+#### Request Parameters
 
-### 6.10 Historical Price Query (蓄積情報問合取得)
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMMfdsGetMarketPrice"` |
+| `sTargetIssueCode` | string | Yes | Comma-separated stock codes (max 120) |
+| `sTargetColumn` | string | No | Comma-separated information codes to retrieve |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
+
+**Note**: Information codes use the type+code format specified in the EVENT I/F data specification document section 3.(3) FD.
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMMfdsGetMarketPrice"` |
+| `aCLMMfdsMarketPrice` | array | Price list |
+
+**aCLMMfdsMarketPrice array item fields:**
+
+| Field | Description |
+|-------|-------------|
+| `sIssueCode` | Stock ticker |
+| (various `p*` fields) | Price data fields matching requested information codes (e.g., `pDPP` = closing price, `pPRP` = previous close) |
+| (various `t*:T` fields) | Timestamp fields (e.g., `tDPP:T` = closing price timestamp) |
+
+### 6.10 CLMMfdsGetMarketPriceHistory (Historical Price Query)
 
 **sCLMID**: `"CLMMfdsGetMarketPriceHistory"` (v4r3+)
 **Virtual URL**: `sUrlPrice`
 
-Retrieves historical OHLCV data for a specified stock. Data goes back approximately 20 years.
+Retrieves historical OHLCV data for a specified stock. Data goes back approximately 20 years. Returns data in date ascending order.
 
-Returns:
-- OHLCV (with and without stock split adjustment)
-- Stock split dates with pre/post unit counts and conversion factors
+#### Request Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sCLMID` | string | Yes | `"CLMMfdsGetMarketPriceHistory"` |
+| `sIssueCode` | string | Yes | Single stock ticker (e.g., `"6501"`) |
+| `sSizyouC` | string | No | Market code (default: `"00"` = TSE) |
+| `p_no` | string | Yes | Request sequence number |
+| `p_sd_date` | string | Yes | Client timestamp |
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sCLMID` | string | `"CLMMfdsGetMarketPriceHistory"` |
+| `sIssueCode` | string | Echo of request value |
+| `sSizyouC` | string | Echo of request value |
+| `aCLMMfdsGetMarketPriceHistory` | array | Historical data list |
+
+**aCLMMfdsGetMarketPriceHistory array item fields:**
+
+| Field | Description |
+|-------|-------------|
+| `sDate` | Date `YYYYMMDD` |
+| `pDOP` | Open price |
+| `pDHP` | High price |
+| `pDLP` | Low price |
+| `pDPP` | Close price |
+| `pDV` | Volume |
+| `pDOPxK` | Open price x split factor |
+| `pDHPxK` | High price x split factor |
+| `pDLPxK` | Low price x split factor |
+| `pDPPxK` | Close price x split factor |
+| `pDVxK` | Volume / split factor |
+| `pSPUO` | Pre-split unit count (only on split dates) |
+| `pSPUC` | Post-split unit count (only on split dates) |
+| `pSPUK` | Split conversion factor = pre/post (only on split dates) |
 
 ---
 
@@ -575,7 +1614,7 @@ Events are identified by the `p_evt_cmd` field:
 | `EC` | Execution | Order/execution notifications (order status changes, fills, rejections) |
 | `ST` | Status | System status notifications (open, close, etc.) |
 | `KP` | Market Price | Real-time stock prices (throttled) |
-| `FD` | Tick Data | Real-time tick/quote data (配信指定) |
+| `FD` | Tick Data | Real-time tick/quote data |
 | `NS` | News | Real-time news notifications |
 | `SS` | Session Status | Session status changes |
 | `US` | User Status | User-specific status changes |
@@ -626,7 +1665,7 @@ System status notifications include `p_errno` and `p_err` fields (v4r7+ change: 
 
 ### 7.7 Market Price Throttling
 
-Real-time market prices via EVENT I/F are subject to throttling (間引き処理). Prices may be delayed depending on the client's network conditions. This is a best-effort delivery mechanism.
+Real-time market prices via EVENT I/F are subject to throttling. Prices may be delayed depending on the client's network conditions. This is a best-effort delivery mechanism.
 
 ### 7.8 WebSocket Service Note
 
@@ -684,7 +1723,7 @@ When `p_errno != 0`, the `p_err` field contains the error message text.
 
 ### 8.4 Warning Codes
 
-Phone verification related warnings were added in v4r7. Refer to the manual section 7 (結果コード、警告コード表) for the complete list.
+Phone verification related warnings were added in v4r7. Refer to the manual section 7 (result/warning code table) for the complete list.
 
 ---
 
@@ -767,10 +1806,10 @@ When migrating from v4r7 to v4r8:
 
 ### 10.1 Auth Functions (Auth I/F)
 
-| Function | Description |
-|----------|-------------|
-| Login | Authenticate and obtain virtual URLs |
-| Logout | Invalidate virtual URLs |
+| sCLMID | Function |
+|--------|----------|
+| `CLMAuthLoginRequest` / `CLMAuthLoginAck` | Authenticate and obtain virtual URLs |
+| `CLMAuthLogoutRequest` / `CLMAuthLogoutAck` | Invalidate virtual URLs |
 
 ### 10.2 Business Functions (REQUEST I/F via sUrlRequest)
 
@@ -778,27 +1817,26 @@ When migrating from v4r7 to v4r8:
 |--------|----------|
 | `CLMKabuNewOrder` | New stock order |
 | `CLMKabuCorrectOrder` | Order correction/amendment |
-| `CLMKabuCancelOrder` | Order cancellation (including batch cancel) |
-| `CLMGenbutuHoyuuList` (*) | Spot holdings list |
+| `CLMKabuCancelOrder` | Order cancellation |
+| `CLMKabuCancelOrderAll` | Cancel all orders |
+| `CLMGenbutuKabuList` | Spot stock holdings list |
 | `CLMShinyouTategyokuList` | Margin positions list |
-| `CLMKaiYoryoku` (*) | Buying power |
-| `CLMTateYoryoku` (*) | Margin capacity & maintenance ratio |
-| `CLMBaikyakuKanouSuryou` (*) | Sellable quantity |
+| `CLMZanKaiKanougaku` | Buying power |
+| `CLMZanShinkiKanoIjiritu` | Margin capacity & maintenance ratio |
+| `CLMZanUriKanousuu` | Sellable quantity |
 | `CLMOrderList` | Order list |
 | `CLMOrderListDetail` | Order/fill detail |
-| `CLMKanougakuSummary` (*) | Available amount summary |
-| `CLMKanougakuSuii` (*) | Available amount history |
-| (unknown sCLMID) | Spot stock purchase available amount detail |
-| (unknown sCLMID) | Margin new position available amount detail |
-| (unknown sCLMID) | Real-time margin rate |
-
-(*) sCLMID values marked with asterisk are estimated from Japanese function names; exact sCLMID values should be confirmed against the detailed manual.
+| `CLMZanKaiSummary` | Account summary |
+| `CLMZanKaiKanougakuSuii` | Buying power history |
+| `CLMZanKaiGenbutuKaitukeSyousai` | Spot stock purchase available amount detail |
+| `CLMZanKaiSinyouSinkidateSyousai` | Margin new position available amount detail |
+| `CLMZanRealHosyoukinRitu` | Real-time margin ratio |
 
 ### 10.3 Master Functions (REQUEST I/F via sUrlMaster)
 
 | sCLMID | Function |
 |--------|----------|
-| (streaming) | Master data download |
+| `CLMEventDownload` | Master data download (streaming) |
 | `CLMMfdsGetMasterData` | Master data query (v4r2+) |
 | `CLMMfdsGetNewsHead` | News header query (v4r4+) |
 | `CLMMfdsGetNewsBody` | News body query (v4r4+) |
@@ -806,6 +1844,27 @@ When migrating from v4r7 to v4r8:
 | `CLMMfdsGetSyoukinZan` | Securities finance balance (v4r6+) |
 | `CLMMfdsGetShinyouZan` | Margin balance query (v4r6+) |
 | `CLMMfdsGetHibuInfo` | Reverse daily interest (v4r6+) |
+
+#### Master Data Download Types (CLMEventDownload targets)
+
+| sCLMID | Description |
+|--------|-------------|
+| `CLMSystemStatus` | System status |
+| `CLMDateZyouhou` | Date information |
+| `CLMYobine` | Tick size |
+| `CLMUnyouStatus` | Operation status by state |
+| `CLMUnyouStatusKabu` | Stock market operation status |
+| `CLMUnyouStatusHasei` | Derivative market operation status |
+| `CLMIssueMstKabu` | Stock issue master |
+| `CLMIssueSizyouMstKabu` | Stock issue-market master |
+| `CLMIssueSizyouKiseiKabu` | Stock issue-market regulations |
+| `CLMIssueMstSak` | Futures issue master |
+| `CLMIssueMstOp` | Options issue master |
+| `CLMIssueSizyouKiseiHasei` | Derivative issue-market regulations |
+| `CLMDaiyouKakeme` | Substitute collateral rate |
+| `CLMHosyoukinMst` | Margin requirement master |
+| `CLMOrderErrReason` | Exchange error/reason codes |
+| `CLMEventDownloadComplete` | Download complete marker |
 
 ### 10.4 Market Price Functions (REQUEST I/F via sUrlPrice)
 
@@ -848,17 +1907,17 @@ When migrating from v4r7 to v4r8:
 ### Login Request (GET)
 
 ```
-GET https://kabuka.e-shiten.jp/e_api_v4r8/auth/?%7B%22p_no%22%3A%221%22%2C%22p_sd_date%22%3A%222026.03.21-09%3A00%3A00.000%22%2C%22sUserId%22%3A%22MYID%22%2C%22sPassword%22%3A%22MYPASS%22%2C%22sSecondPassword%22%3A%22MY2NDPASS%22%7D
+GET https://kabuka.e-shiten.jp/e_api_v4r8/auth/?%7B%22sCLMID%22%3A%22CLMAuthLoginRequest%22%2C%22p_no%22%3A%221%22%2C%22p_sd_date%22%3A%222026.03.21-09%3A00%3A00.000%22%2C%22sUserId%22%3A%22MYID%22%2C%22sPassword%22%3A%22MYPASS%22%7D
 ```
 
 Decoded JSON:
 ```json
 {
+  "sCLMID": "CLMAuthLoginRequest",
   "p_no": "1",
   "p_sd_date": "2026.03.21-09:00:00.000",
   "sUserId": "MYID",
-  "sPassword": "MYPASS",
-  "sSecondPassword": "MY2NDPASS"
+  "sPassword": "MYPASS"
 }
 ```
 
@@ -866,14 +1925,17 @@ Decoded JSON:
 
 ```json
 {
-  "p_errno": "0",
-  "p_err": "",
+  "sCLMID": "CLMAuthLoginAck",
+  "sResultCode": "0",
+  "sResultText": "",
+  "sZyoutoekiKazeiC": "1",
+  "sSecondPasswordOmit": "0",
+  "sKinsyouhouMidokuFlg": "0",
   "sUrlRequest": "https://kabuka.e-shiten.jp/xxx/yyy/zzz/request/",
   "sUrlMaster": "https://kabuka.e-shiten.jp/xxx/yyy/zzz/master/",
   "sUrlPrice": "https://kabuka.e-shiten.jp/xxx/yyy/zzz/price/",
   "sUrlEvent": "https://kabuka.e-shiten.jp/xxx/yyy/zzz/event/",
-  "sUrlEventWebSocket": "wss://kabuka.e-shiten.jp/xxx/yyy/zzz/event_ws/",
-  "sKinsyouhouMidokuFlg": "0"
+  "sUrlEventWebSocket": "wss://kabuka.e-shiten.jp/xxx/yyy/zzz/event_ws/"
 }
 ```
 
@@ -882,18 +1944,21 @@ Decoded JSON:
 ```json
 {
   "sCLMID": "CLMKabuNewOrder",
+  "sZyoutoekiKazeiC": "1",
   "sIssueCode": "7203",
-  "sOrderSizyouC": "00",
-  "sOrderBaibaiKubun": "3",
-  "sGenkinSinyouKubun": "0",
-  "sOrderCondition": "0",
-  "sOrderOrderPriceKubun": "2",
-  "sOrderOrderPrice": "2500",
-  "sOrderOrderSuryou": "100",
-  "sOrderOrderExpireDay": "0",
-  "sGyousyaCode": "",
-  "sOrderTatebiType": "",
-  "sOrderTategyokuNumber": "",
+  "sSizyouC": "00",
+  "sBaibaiKubun": "3",
+  "sCondition": "0",
+  "sOrderPrice": "2500",
+  "sOrderSuryou": "100",
+  "sGenkinShinyouKubun": "0",
+  "sOrderExpireDay": "0",
+  "sGyakusasiOrderType": "0",
+  "sGyakusasiZyouken": "0",
+  "sGyakusasiPrice": "*",
+  "sTatebiType": "*",
+  "sTategyokuZyoutoekiKazeiC": "*",
+  "sSecondPassword": "MY2NDPASS",
   "p_no": "2",
   "p_sd_date": "2026.03.21-09:00:01.000"
 }
@@ -903,10 +1968,18 @@ Decoded JSON:
 
 ```json
 {
-  "p_errno": "0",
+  "sCLMID": "CLMKabuNewOrder",
   "sResultCode": "0",
-  "sOrderNumber": "ORD001",
-  "sResultText": "OK"
+  "sResultText": "",
+  "sWarningCode": "0",
+  "sWarningText": "",
+  "sOrderNumber": "27003158",
+  "sEigyouDay": "20260321",
+  "sOrderUkewatasiKingaku": "250000",
+  "sOrderTesuryou": "0",
+  "sOrderSyouhizei": "0",
+  "sKinri": "-",
+  "sOrderDate": "20260321090001"
 }
 ```
 
@@ -914,14 +1987,16 @@ Decoded JSON:
 
 ```json
 {
-  "p_errno": "0",
+  "sCLMID": "CLMOrderListDetail",
   "sResultCode": "0",
-  "sOrderNumber": "ORD001",
+  "sOrderNumber": "27003158",
+  "sEigyouDay": "20260321",
   "sIssueCode": "7203",
   "sOrderStatusCode": "10",
   "sOrderBaibaiKubun": "3",
   "sOrderOrderPrice": "2500",
   "sOrderOrderSuryou": "100",
+  "sOrderCurrentSuryou": "0",
   "sYakuzyouPrice": "2500",
   "sYakuzyouSuryou": "100",
   "sBaiBaiDaikin": "250000",
@@ -935,7 +2010,7 @@ Decoded JSON:
 ```json
 {
   "p_evt_cmd": "EC",
-  "sOrderNumber": "ORD001",
+  "sOrderNumber": "27003158",
   "sIssueCode": "7203",
   "sOrderStatusCode": "10",
   "sYakuzyouPrice": "2500",

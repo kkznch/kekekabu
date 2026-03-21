@@ -197,6 +197,7 @@ async fn main() -> Result<()> {
     } else {
         config::Environment::Production
     };
+    let db_path = db::db_path(env);
 
     // config subcommands don't need DB
     if let Command::Config(sub) = cli.command {
@@ -210,9 +211,9 @@ async fn main() -> Result<()> {
     // db subcommands manage DB directly
     if let Command::Db(sub) = cli.command {
         match sub {
-            DbCommand::Migrate => cmd::db::migrate(env, cli.format).await?,
-            DbCommand::Status => cmd::db::status(env, cli.format).await?,
-            DbCommand::Reset { force } => cmd::db::reset(env, force)?,
+            DbCommand::Migrate => cmd::db::migrate(&db_path, cli.format).await?,
+            DbCommand::Status => cmd::db::status(&db_path, cli.format).await?,
+            DbCommand::Reset { force } => cmd::db::reset(&db_path, force)?,
         }
         return Ok(());
     }
@@ -230,7 +231,7 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    let db = db::SqliteClient::open(env).await?;
+    let db = db::SqliteClient::open(&db_path).await?;
 
     // show subcommands don't need config
     if let Command::Show(sub) = cli.command {

@@ -306,11 +306,9 @@ pub struct SqliteClient {
 }
 
 impl SqliteClient {
-    /// Open existing database. Fails if DB file does not exist.
+    /// Open existing database at the given path. Fails if DB file does not exist.
     /// Does NOT run migrations — use `kabu db migrate` for that.
-    pub async fn open(env: crate::config::Environment) -> Result<Self> {
-        let path = db_path(env);
-
+    pub async fn open(path: &std::path::Path) -> Result<Self> {
         if !path.exists() {
             anyhow::bail!(
                 "Database not found at {}\nRun `kabu db migrate` to create and initialize the database.",
@@ -318,13 +316,13 @@ impl SqliteClient {
             );
         }
 
-        Self::open_connection(path).await
+        Self::open_connection(path.to_path_buf()).await
     }
 
-    /// Create database if needed and apply migrations.
+    /// Create database at the given path if needed and apply migrations.
     /// This is the only entry point that creates a new DB file (`kabu db migrate`).
-    pub async fn open_or_create(env: crate::config::Environment) -> Result<Self> {
-        let path = db_path(env);
+    pub async fn open_or_create(path: &std::path::Path) -> Result<Self> {
+        let path = path.to_path_buf();
 
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {

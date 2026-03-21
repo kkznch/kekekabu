@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use rand::Rng;
+use std::path::Path;
 use tracing::info;
 
-use crate::config::Environment;
 use crate::db;
 use crate::output::{self, HumanDisplay, OutputFormat};
 
@@ -24,27 +24,26 @@ impl HumanDisplay for DbStatus {
     }
 }
 
-pub async fn migrate(env: Environment, format: OutputFormat) -> Result<()> {
+pub async fn migrate(db_path: &Path, format: OutputFormat) -> Result<()> {
     info!("Running database migrations");
-    let db = db::SqliteClient::open_or_create(env).await?;
+    let db = db::SqliteClient::open_or_create(db_path).await?;
     let migrations = db.migration_status().await?;
     output::print_list_output(&migrations, format);
     info!(count = migrations.len(), "Migrations applied");
     Ok(())
 }
 
-pub async fn status(env: Environment, format: OutputFormat) -> Result<()> {
-    let path = db::db_path(env);
-    if !path.exists() {
-        anyhow::bail!("Database not found at {}", path.display());
+pub async fn status(db_path: &Path, format: OutputFormat) -> Result<()> {
+    if !db_path.exists() {
+        anyhow::bail!("Database not found at {}", db_path.display());
     }
 
-    let db = db::SqliteClient::open(env).await?;
+    let db = db::SqliteClient::open(db_path).await?;
     let migrations = db.migration_status().await?;
 
-    let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+    let size = std::fs::metadata(db_path).map(|m| m.len()).unwrap_or(0);
     let status = DbStatus {
-        path: path.display().to_string(),
+        path: db_path.display().to_string(),
         size_bytes: size,
         migrations,
     };
@@ -53,11 +52,9 @@ pub async fn status(env: Environment, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-pub fn reset(env: Environment, force: bool) -> Result<()> {
-    let path = db::db_path(env);
-
-    if !path.exists() {
-        anyhow::bail!("Database not found at {}", path.display());
+pub fn reset(db_path: &Path, force: bool) -> Result<()> {
+    if !db_path.exists() {
+        anyhow::bail!("Database not found at {}", db_path.display());
     }
 
     if !force {
@@ -68,7 +65,7 @@ pub fn reset(env: Environment, force: bool) -> Result<()> {
             .collect();
 
         eprintln!("⚠ This will permanently delete the database at:");
-        eprintln!("  {}", path.display());
+        eprintln!("  {}", db_path.display());
         eprintln!();
         eprintln!("All data (watchlist, evaluations, positions, trades, orders) will be lost.");
         eprintln!();
@@ -87,18 +84,19 @@ pub fn reset(env: Environment, force: bool) -> Result<()> {
     }
 
     // Remove main DB file + WAL/SHM files
-    std::fs::remove_file(&path).with_context(|| format!("Failed to delete {}", path.display()))?;
+    std::fs::remove_file(db_path)
+        .with_context(|| format!("Failed to delete {}", db_path.display()))?;
 
-    let wal = path.with_extension("db-wal");
+    let wal = db_path.with_extension("db-wal");
     if wal.exists() {
         let _ = std::fs::remove_file(&wal);
     }
-    let shm = path.with_extension("db-shm");
+    let shm = db_path.with_extension("db-shm");
     if shm.exists() {
         let _ = std::fs::remove_file(&shm);
     }
 
-    eprintln!("Database deleted: {}", path.display());
+    eprintln!("Database deleted: {}", db_path.display());
     eprintln!("Run `kabu db migrate` to recreate with fresh schema.");
     Ok(())
 }

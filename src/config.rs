@@ -2,6 +2,15 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::path::PathBuf;
 
+/// Environment selector for Tachibana Securities API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Environment {
+    #[default]
+    Production,
+    Demo,
+}
+
 #[derive(Debug, Deserialize, Default)]
 pub struct AppConfig {
     #[serde(default)]
@@ -21,11 +30,21 @@ pub struct TachibanaConfig {
     pub second_password: Option<String>,
     #[serde(default = "TachibanaConfig::default_event_timeout_secs")]
     pub event_timeout_secs: u64,
+    #[serde(default)]
+    pub environment: Environment,
 }
 
 impl TachibanaConfig {
     fn default_event_timeout_secs() -> u64 {
         30
+    }
+
+    /// Return the auth URL for the configured environment.
+    pub fn auth_url(&self) -> &'static str {
+        match self.environment {
+            Environment::Production => "https://kabuka.e-shiten.jp/e_api_v4r8/auth/",
+            Environment::Demo => "https://demo.e-shiten.jp/e_api_v4r8/auth/",
+        }
     }
 
     /// Validate that all required credentials are present.
@@ -309,7 +328,8 @@ impl AppConfig {
         // Tachibana env overrides
         let has_tachibana_env = Self::env_non_empty("TACHIBANA_USER_ID").is_some()
             || Self::env_non_empty("TACHIBANA_PASSWORD").is_some()
-            || Self::env_non_empty("TACHIBANA_SECOND_PASSWORD").is_some();
+            || Self::env_non_empty("TACHIBANA_SECOND_PASSWORD").is_some()
+            || Self::env_non_empty("TACHIBANA_ENVIRONMENT").is_some();
 
         if has_tachibana_env {
             let tc = self.tachibana.get_or_insert(TachibanaConfig {
@@ -317,6 +337,7 @@ impl AppConfig {
                 password: None,
                 second_password: None,
                 event_timeout_secs: TachibanaConfig::default_event_timeout_secs(),
+                environment: Environment::default(),
             });
             if let Some(v) = Self::env_non_empty("TACHIBANA_USER_ID") {
                 tc.user_id = Some(v);
@@ -326,6 +347,16 @@ impl AppConfig {
             }
             if let Some(v) = Self::env_non_empty("TACHIBANA_SECOND_PASSWORD") {
                 tc.second_password = Some(v);
+            }
+            if let Some(v) = Self::env_non_empty("TACHIBANA_ENVIRONMENT") {
+                match v.to_lowercase().as_str() {
+                    "demo" => tc.environment = Environment::Demo,
+                    "production" => tc.environment = Environment::Production,
+                    _ => tracing::warn!(
+                        value = %v,
+                        "Invalid TACHIBANA_ENVIRONMENT value (expected: production, demo)"
+                    ),
+                }
             }
         }
     }

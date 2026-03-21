@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use rand::Rng;
 use tracing::info;
 
+use crate::config::Environment;
 use crate::db;
 use crate::output::{self, HumanDisplay, OutputFormat};
 
@@ -23,22 +24,22 @@ impl HumanDisplay for DbStatus {
     }
 }
 
-pub async fn migrate(format: OutputFormat) -> Result<()> {
+pub async fn migrate(env: Environment, format: OutputFormat) -> Result<()> {
     info!("Running database migrations");
-    let db = db::SqliteClient::open_or_create().await?;
+    let db = db::SqliteClient::open_or_create(env).await?;
     let migrations = db.migration_status().await?;
     output::print_list_output(&migrations, format);
     info!(count = migrations.len(), "Migrations applied");
     Ok(())
 }
 
-pub async fn status(format: OutputFormat) -> Result<()> {
-    let path = db::db_path();
+pub async fn status(env: Environment, format: OutputFormat) -> Result<()> {
+    let path = db::db_path(env);
     if !path.exists() {
         anyhow::bail!("Database not found at {}", path.display());
     }
 
-    let db = db::SqliteClient::open().await?;
+    let db = db::SqliteClient::open(env).await?;
     let migrations = db.migration_status().await?;
 
     let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
@@ -52,8 +53,8 @@ pub async fn status(format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-pub fn reset(force: bool) -> Result<()> {
-    let path = db::db_path();
+pub fn reset(env: Environment, force: bool) -> Result<()> {
+    let path = db::db_path(env);
 
     if !path.exists() {
         anyhow::bail!("Database not found at {}", path.display());

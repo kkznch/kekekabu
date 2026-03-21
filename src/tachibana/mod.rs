@@ -8,8 +8,6 @@ use async_trait::async_trait;
 use crate::config::TachibanaConfig;
 use request::{decode_shift_jis, json_str};
 
-const AUTH_URL: &str = "https://kabuka.e-shiten.jp/e_api_v4r8/auth/";
-
 /// Order side (buy or sell).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -45,10 +43,6 @@ pub trait BrokerClient: Send + Sync {
         quantity: &str,
     ) -> Result<order::NewOrderResult>;
     async fn query_order(&self, order_number: &str) -> Result<order::OrderDetail>;
-    async fn wait_for_fills(
-        &self,
-        pending_order_numbers: &[String],
-    ) -> Result<Vec<event::FillNotification>>;
     async fn logout(&mut self) -> Result<()>;
 }
 
@@ -63,6 +57,7 @@ pub struct SessionUrls {
 pub struct TachibanaClient {
     http: reqwest::Client,
     config: TachibanaConfig,
+    auth_url: &'static str,
     session: Option<SessionUrls>,
 }
 
@@ -71,6 +66,7 @@ impl TachibanaClient {
     pub fn new(config: &TachibanaConfig) -> Self {
         Self {
             http: reqwest::Client::new(),
+            auth_url: config.auth_url(),
             config: config.clone(),
             session: None,
         }
@@ -105,11 +101,11 @@ impl TachibanaClient {
 
         let body = request::build_request_body(&auth_json)?;
 
-        tracing::info!("Logging in to Tachibana API");
+        tracing::info!(auth_url = %self.auth_url, "Logging in to Tachibana API");
 
         let resp = self
             .http
-            .post(AUTH_URL)
+            .post(self.auth_url)
             .header("Content-Type", "application/json; charset=Shift_JIS")
             .body(body)
             .send()
@@ -198,24 +194,6 @@ impl TachibanaClient {
         order::parse_order_detail_response(&body)
     }
 
-    /// Wait for fill notifications via WebSocket (uses config timeout).
-    pub async fn wait_for_fills(
-        &self,
-        pending_order_numbers: &[String],
-    ) -> Result<Vec<event::FillNotification>> {
-        let session = self
-            .session
-            .as_ref()
-            .context("Not logged in — call login() first")?;
-
-        event::wait_for_fills(
-            &session.event_ws_url,
-            self.config.event_timeout_secs,
-            pending_order_numbers,
-        )
-        .await
-    }
-
     /// Log out (invalidate virtual URLs).
     pub async fn logout(&mut self) -> Result<()> {
         if let Some(session) = &self.session {
@@ -263,13 +241,6 @@ impl BrokerClient for TachibanaClient {
 
     async fn query_order(&self, order_number: &str) -> Result<order::OrderDetail> {
         TachibanaClient::query_order(self, order_number).await
-    }
-
-    async fn wait_for_fills(
-        &self,
-        pending_order_numbers: &[String],
-    ) -> Result<Vec<event::FillNotification>> {
-        TachibanaClient::wait_for_fills(self, pending_order_numbers).await
     }
 
     async fn logout(&mut self) -> Result<()> {

@@ -12,6 +12,10 @@ struct Cli {
     /// Output format
     #[arg(long, short, global = true, default_value = "json")]
     format: OutputFormat,
+
+    /// Use Tachibana demo environment (demo API + separate DB)
+    #[arg(long, global = true)]
+    demo: bool,
 }
 
 #[derive(Subcommand)]
@@ -69,6 +73,8 @@ enum Command {
     /// Manage launchd service (macOS)
     #[command(subcommand)]
     Service(ServiceCommand),
+    /// Watch for fill notifications via Tachibana WebSocket (long-running)
+    Watch,
     /// Run the full pipeline as a single process with per-stock error isolation
     #[command(subcommand)]
     Workflow(WorkflowCommand),
@@ -186,6 +192,12 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
+    let env = if cli.demo {
+        config::Environment::Demo
+    } else {
+        config::Environment::Production
+    };
+
     // config subcommands don't need DB
     if let Command::Config(sub) = cli.command {
         match sub {
@@ -198,9 +210,9 @@ async fn main() -> Result<()> {
     // db subcommands manage DB directly
     if let Command::Db(sub) = cli.command {
         match sub {
-            DbCommand::Migrate => cmd::db::migrate(cli.format).await?,
-            DbCommand::Status => cmd::db::status(cli.format).await?,
-            DbCommand::Reset { force } => cmd::db::reset(force)?,
+            DbCommand::Migrate => cmd::db::migrate(env, cli.format).await?,
+            DbCommand::Status => cmd::db::status(env, cli.format).await?,
+            DbCommand::Reset { force } => cmd::db::reset(env, force)?,
         }
         return Ok(());
     }
@@ -218,7 +230,7 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    let db = db::SqliteClient::open().await?;
+    let db = db::SqliteClient::open(env).await?;
 
     // show subcommands don't need config
     if let Command::Show(sub) = cli.command {
@@ -246,7 +258,25 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    let config = config::AppConfig::load()?;
+    let mut config = config::AppConfig::load()?;
+
+    // --demo flag overrides tachibana environment
+    if cli.demo {
+        let tc = config.tachibana.get_or_insert(config::TachibanaConfig {
+            user_id: None,
+            password: None,
+            second_password: None,
+            event_timeout_secs: 30,
+            environment: config::Environment::Demo,
+        });
+        tc.environment = config::Environment::Demo;
+    }
+
+    // watch subcommand — long-running WebSocket fill monitor
+    if let Command::Watch = cli.command {
+        cmd::watch::run(&db, &config).await?;
+        return Ok(());
+    }
 
     // workflow subcommand — single-process pipeline
     if let Command::Workflow(sub) = cli.command {
@@ -267,6 +297,7 @@ async fn main() -> Result<()> {
         | Command::Show(_)
         | Command::Db(_)
         | Command::Service(_)
+        | Command::Watch
         | Command::Workflow(_) => {
             unreachable!()
         }

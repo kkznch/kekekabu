@@ -134,13 +134,17 @@ pub struct FillParams {
 
 // ─── Utility functions ────────────────────────────────────────────────
 
-pub fn db_path() -> std::path::PathBuf {
+pub fn db_path(env: crate::config::Environment) -> std::path::PathBuf {
+    let filename = match env {
+        crate::config::Environment::Production => "kekekabu.db",
+        crate::config::Environment::Demo => "kekekabu-demo.db",
+    };
     if let Some(dir) = crate::config::config_dir() {
         // Ensure directory exists for DB file creation
         let _ = std::fs::create_dir_all(&dir);
-        return dir.join("kekekabu.db");
+        return dir.join(filename);
     }
-    std::path::PathBuf::from("./kekekabu.db")
+    std::path::PathBuf::from(format!("./{filename}"))
 }
 
 fn decimal_to_f64(d: Decimal) -> f64 {
@@ -304,8 +308,8 @@ pub struct SqliteClient {
 impl SqliteClient {
     /// Open existing database. Fails if DB file does not exist.
     /// Does NOT run migrations — use `kabu db migrate` for that.
-    pub async fn open() -> Result<Self> {
-        let path = db_path();
+    pub async fn open(env: crate::config::Environment) -> Result<Self> {
+        let path = db_path(env);
 
         if !path.exists() {
             anyhow::bail!(
@@ -319,8 +323,8 @@ impl SqliteClient {
 
     /// Create database if needed and apply migrations.
     /// This is the only entry point that creates a new DB file (`kabu db migrate`).
-    pub async fn open_or_create() -> Result<Self> {
-        let path = db_path();
+    pub async fn open_or_create(env: crate::config::Environment) -> Result<Self> {
+        let path = db_path(env);
 
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {

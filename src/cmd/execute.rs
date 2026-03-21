@@ -279,8 +279,6 @@ pub async fn run(
     // ── Phase 6: Place orders (non-dry-run only) ──
     let max_position_size = spec.execution_max_position_size();
     let initial_cash = spec.budget_initial_cash();
-    let mut new_tachibana_order_ids: Vec<String> = Vec::new();
-
     if !dry_run && !signals.is_empty() {
         let client = broker
             .as_mut()
@@ -389,8 +387,6 @@ pub async fn run(
                     )
                     .await?;
 
-                    new_tachibana_order_ids.push(result.order_number.clone());
-
                     order_results.push(OrderResult {
                         ticker: sig.ticker.clone(),
                         side: sig.side.as_str().to_string(),
@@ -418,63 +414,7 @@ pub async fn run(
         }
     }
 
-    // ── Phase 7: Short WebSocket fill wait ──
-    if !dry_run
-        && !new_tachibana_order_ids.is_empty()
-        && let Some(ref client) = broker
-    {
-        info!(
-            order_count = new_tachibana_order_ids.len(),
-            "Waiting for fill notifications"
-        );
-
-        match client.wait_for_fills(&new_tachibana_order_ids).await {
-            Ok(fills) => {
-                let pending = conn.list_pending_orders().await?;
-
-                for fill in fills {
-                    if let Some(or) = order_results
-                        .iter_mut()
-                        .find(|o| o.tachibana_order_id.as_deref() == Some(&fill.order_number))
-                    {
-                        or.status = "filled".to_string();
-                    }
-
-                    if let Some(order) = pending
-                        .iter()
-                        .find(|o| o.tachibana_order_id.as_deref() == Some(&fill.order_number))
-                    {
-                        let filled_at =
-                            chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-
-                        conn.update_order_and_record_fill(FillParams {
-                            order_id: order.id,
-                            status: "filled".to_string(),
-                            tachibana_order_id: None,
-                            filled_price: Some(fill.filled_price.clone()),
-                            filled_quantity: Some(fill.filled_quantity.clone()),
-                            filled_at: Some(filled_at),
-                            ticker: order.ticker.clone(),
-                            side: order.side.clone(),
-                        })
-                        .await?;
-
-                        info!(
-                            ticker = %order.ticker,
-                            price = %fill.filled_price,
-                            quantity = %fill.filled_quantity,
-                            "Fill recorded in portfolio"
-                        );
-                    }
-                }
-            }
-            Err(e) => {
-                warn!(error = %e, "Error during WebSocket fill wait");
-            }
-        }
-    }
-
-    // ── Phase 8: Logout ──
+    // ── Phase 7: Logout ──
     logout_broker(&mut broker).await;
 
     Ok(ExecuteResult {

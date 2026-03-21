@@ -8,4 +8,5 @@ pub mod report;
 pub mod scan;
 pub mod service;
 pub mod show;
+pub mod watch;
 pub mod workflow;

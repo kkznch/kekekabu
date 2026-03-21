@@ -4,7 +4,7 @@ use kekekabu::cmd::execute;
 use kekekabu::config::AppConfig;
 use kekekabu::db::{DbClient, SqliteClient};
 use kekekabu::spec::InvestmentSpec;
-use kekekabu::tachibana::{BrokerClient, Side, event::FillNotification, order};
+use kekekabu::tachibana::{BrokerClient, Side, order};
 use rust_decimal::Decimal;
 use std::sync::Mutex;
 
@@ -73,13 +73,6 @@ impl BrokerClient for MockBrokerClient {
 
     async fn query_order(&self, _order_number: &str) -> Result<order::OrderDetail> {
         anyhow::bail!("mock: no orders to query")
-    }
-
-    async fn wait_for_fills(
-        &self,
-        _pending_order_numbers: &[String],
-    ) -> Result<Vec<FillNotification>> {
-        Ok(vec![])
     }
 
     async fn logout(&mut self) -> Result<()> {

@@ -18,6 +18,7 @@ pub struct FillNotification {
 ///
 /// Returns a list of fill notifications received before the timeout.
 /// On connection failure, returns Ok(empty vec) with a warning log.
+#[allow(dead_code)]
 pub async fn wait_for_fills(
     ws_url: &str,
     timeout_secs: u64,
@@ -110,7 +111,7 @@ pub async fn wait_for_fills(
 }
 
 /// Try to parse a WebSocket message as a fill notification (EC event).
-fn parse_fill_notification(text: &str) -> Option<FillNotification> {
+pub fn parse_fill_notification(text: &str) -> Option<FillNotification> {
     let value: serde_json::Value = serde_json::from_str(text).ok()?;
 
     // Check if this is an execution notification (EC event)
@@ -140,7 +141,7 @@ fn parse_fill_notification(text: &str) -> Option<FillNotification> {
 }
 
 /// Build the EVENT I/F registration request to subscribe to execution notifications.
-fn build_event_subscribe_json() -> serde_json::Value {
+pub fn build_event_subscribe_json() -> serde_json::Value {
     serde_json::json!({
         "p_evt_cmd": "EC",
         "p_no": super::request::next_p_no(),

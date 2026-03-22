@@ -7,6 +7,7 @@ use tracing::{info, warn};
 use crate::config::AppConfig;
 use crate::db::{DbClient, FillParams};
 use crate::tachibana::TachibanaClient;
+use crate::tachibana::compress;
 use crate::tachibana::event::{build_event_subscribe_json, parse_fill_notification};
 
 /// Run the watch command: connect to Tachibana EVENT I/F WebSocket and
@@ -50,8 +51,10 @@ pub async fn run(conn: &dyn DbClient, config: &AppConfig) -> Result<()> {
 
         let (mut write, mut read) = ws_stream.split();
 
-        // Send EC subscription
-        let subscribe_msg = build_event_subscribe_json().to_string();
+        // Send EC subscription (compressed)
+        let subscribe_json = build_event_subscribe_json();
+        let compressed = compress::compress(&subscribe_json);
+        let subscribe_msg = compressed.to_string();
         if let Err(e) = write.send(Message::Text(subscribe_msg.into())).await {
             warn!(error = %e, "Failed to send EVENT subscribe message");
             let _ = client.logout().await;
@@ -76,7 +79,13 @@ pub async fn run(conn: &dyn DbClient, config: &AppConfig) -> Result<()> {
                 msg = read.next() => {
                     match msg {
                         Some(Ok(Message::Text(text))) => {
-                            if let Some(fill) = parse_fill_notification(&text) {
+                            // Uncompress EVENT I/F message (numeric keys → string keys)
+                            let uncompressed_text = if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&text) {
+                                compress::uncompress(&raw).to_string()
+                            } else {
+                                text.to_string()
+                            };
+                            if let Some(fill) = parse_fill_notification(&uncompressed_text) {
                                 info!(
                                     order_number = %fill.order_number,
                                     ticker = %fill.issue_code,

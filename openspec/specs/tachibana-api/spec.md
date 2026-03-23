@@ -5,11 +5,11 @@
 ## Requirements
 
 ### Requirement: 立花証券 API 認証
-システムは SHALL 立花証券 e支店 API の認証 I/F にログインし、仮想 URL（sUrlRequest, sUrlEvent, sUrlEventWebSocket）を取得してセッションを管理する。
+システムは SHALL 立花証券 e支店 API の認証 I/F に HTTPS POST で圧縮された JSON body を送信してログインし、レスポンスを展開して仮想 URL（sUrlRequest, sUrlEvent, sUrlEventWebSocket）を取得してセッションを管理する。
 
-#### Scenario: ログイン成功
-- **WHEN** 有効な userId, password, secondPassword で認証 I/F にリクエストした場合
-- **THEN** sUrlRequest, sUrlEvent, sUrlEventWebSocket を含むセッション情報を返す
+#### Scenario: ログイン成功（圧縮レスポンス）
+- **WHEN** 有効な userId, password, secondPassword で圧縮リクエストを送信した場合
+- **THEN** 圧縮されたレスポンスを展開し、sUrlRequest, sUrlEvent, sUrlEventWebSocket を含むセッション情報を返す
 
 #### Scenario: 認証失敗
 - **WHEN** 無効な認証情報でログインした場合
@@ -39,7 +39,7 @@
 - **THEN** `"buy"` を返す。`Side::Sell.as_str()` は `"sell"` を返す
 
 ### Requirement: REQUEST I/F による注文入力（公式 v4r8 準拠）
-システムは SHALL REQUEST I/F（sUrlRequest）を通じて株式現物の指値注文を発注する。リクエストには p_no（通し番号）と p_sd_date（クライアント時刻）を含める。フィールド名は公式 v4r8 リファレンスに準拠する：`sSizyouC`, `sBaibaiKubun`, `sGenkinShinyouKubun`, `sCondition`, `sOrderPrice`, `sOrderSuryou`, `sOrderExpireDay`, `sGyakusasiOrderType`, `sGyakusasiZyouken`, `sGyakusasiPrice`, `sTatebiType`, `sZyoutoekiKazeiC`, `sSecondPassword`。
+システムは SHALL REQUEST I/F（sUrlRequest）を通じて株式現物の指値注文を発注する。リクエスト送信時に JSON キーを圧縮（文字列→数字 1-indexed）し、レスポンス受信時に展開（数字→文字列）する。マッピングテーブルは `mfds_json_api_compress_v4r8.js` の `_pa_col` 配列（941項目）に準拠する。リクエストには p_no（通し番号）と p_sd_date（クライアント時刻）を含める。フィールド名は公式 v4r8 リファレンスに準拠する：`sSizyouC`, `sBaibaiKubun`, `sGenkinShinyouKubun`, `sCondition`, `sOrderPrice`, `sOrderSuryou`, `sOrderExpireDay`, `sGyakusasiOrderType`, `sGyakusasiZyouken`, `sGyakusasiPrice`, `sTatebiType`, `sZyoutoekiKazeiC`, `sSecondPassword`。
 
 #### Scenario: 現物買い注文の発注
 - **WHEN** 銘柄コード、指値価格、数量を指定して買い注文を発注した場合

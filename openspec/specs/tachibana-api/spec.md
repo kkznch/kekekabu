@@ -24,30 +24,34 @@
 - **THEN** 仮想 URL を無効化する
 
 ### Requirement: BrokerClient trait による証券 API 抽象化
-システムは SHALL `BrokerClient` trait を定義し、`place_order` メソッドの売買方向パラメータとして `Side` enum（Buy/Sell）を使用する。`Side` enum は `as_str()` で `"buy"` / `"sell"` 文字列に変換可能で、`Display` trait を実装する。
+システムは SHALL `BrokerClient` trait を定義し、`place_order` メソッドの売買方向パラメータとして `Side` enum（Buy/Sell）を使用する。`Side` enum は `as_str()` で `"buy"` / `"sell"` 文字列に変換可能で、`Display` trait を実装する。`place_order` は `second_password` パラメータを受け取り、立花証券 API の `sSecondPassword` フィールドに渡す。
 
 #### Scenario: Side enum による型安全な注文
 - **WHEN** `BrokerClient::place_order(Side::Buy, ...)` を呼び出した場合
-- **THEN** 立花証券 API の `sOrderBaibaiKubun` に `"3"`（買い）が設定される
+- **THEN** 立花証券 API の `sBaibaiKubun` に `"3"`（買い）が設定される
 
 #### Scenario: Side::Sell の注文
 - **WHEN** `BrokerClient::place_order(Side::Sell, ...)` を呼び出した場合
-- **THEN** 立花証券 API の `sOrderBaibaiKubun` に `"1"`（売り）が設定される
+- **THEN** 立花証券 API の `sBaibaiKubun` に `"1"`（売り）が設定される
 
 #### Scenario: Side enum の文字列変換
 - **WHEN** `Side::Buy.as_str()` を呼び出した場合
 - **THEN** `"buy"` を返す。`Side::Sell.as_str()` は `"sell"` を返す
 
-### Requirement: REQUEST I/F による注文入力
-システムは SHALL REQUEST I/F（sUrlRequest）を通じて株式現物の指値注文を発注する。リクエストには p_no（通し番号）と p_sd_date（クライアント時刻）を含める。
+### Requirement: REQUEST I/F による注文入力（公式 v4r8 準拠）
+システムは SHALL REQUEST I/F（sUrlRequest）を通じて株式現物の指値注文を発注する。リクエストには p_no（通し番号）と p_sd_date（クライアント時刻）を含める。フィールド名は公式 v4r8 リファレンスに準拠する：`sSizyouC`, `sBaibaiKubun`, `sGenkinShinyouKubun`, `sCondition`, `sOrderPrice`, `sOrderSuryou`, `sOrderExpireDay`, `sGyakusasiOrderType`, `sGyakusasiZyouken`, `sGyakusasiPrice`, `sTatebiType`, `sZyoutoekiKazeiC`, `sSecondPassword`。
 
-#### Scenario: 指値買い注文の発注
+#### Scenario: 現物買い注文の発注
 - **WHEN** 銘柄コード、指値価格、数量を指定して買い注文を発注した場合
-- **THEN** CLMKabuNewOrder で注文を送信し、注文番号（sOrderNumber）を含む応答を返す
+- **THEN** CLMKabuNewOrder で `sBaibaiKubun` = `"3"`, `sGenkinShinyouKubun` = `"0"`, `sZyoutoekiKazeiC` = `"1"`, `sSecondPassword` を含む注文を送信し、注文番号（sOrderNumber）を含む応答を返す
 
-#### Scenario: 指値売り注文の発注
+#### Scenario: 現物売り注文の発注
 - **WHEN** 保有銘柄に対して指値価格と数量を指定して売り注文を発注した場合
-- **THEN** CLMKabuNewOrder で売り注文を送信し、注文番号を含む応答を返す
+- **THEN** CLMKabuNewOrder で `sBaibaiKubun` = `"1"` の売り注文を送信し、注文番号を含む応答を返す
+
+#### Scenario: 注文詳細レスポンスのパース
+- **WHEN** CLMOrderListDetail のレスポンスを受信した場合
+- **THEN** 公式フィールド名 `sOrderNumber`, `sIssueCode`, `sOrderStatusCode`, `sBaibaiKubun`, `sOrderPrice`, `sOrderSuryou`, `sYakuzyouPrice`, `sYakuzyouSuryou` でパースする
 
 #### Scenario: p_no のインクリメント
 - **WHEN** 連続してリクエストを送信する場合

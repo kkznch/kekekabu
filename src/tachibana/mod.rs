@@ -42,6 +42,7 @@ pub trait BrokerClient: Send + Sync {
         ticker: &str,
         price: &str,
         quantity: &str,
+        second_password: &str,
     ) -> Result<order::NewOrderResult>;
     async fn query_order(&self, order_number: &str) -> Result<order::OrderDetail>;
     async fn logout(&mut self) -> Result<()>;
@@ -192,8 +193,9 @@ impl TachibanaClient {
         ticker: &str,
         price: &str,
         quantity: &str,
+        second_password: &str,
     ) -> Result<order::NewOrderResult> {
-        let json = order::build_new_order_json(side, ticker, price, quantity);
+        let json = order::build_new_order_json(side, ticker, price, quantity, second_password);
         let value = self.send_request_raw(&json).await?;
         order::parse_new_order_value(&value)
     }
@@ -247,8 +249,9 @@ impl BrokerClient for TachibanaClient {
         ticker: &str,
         price: &str,
         quantity: &str,
+        second_password: &str,
     ) -> Result<order::NewOrderResult> {
-        TachibanaClient::place_order(self, side, ticker, price, quantity).await
+        TachibanaClient::place_order(self, side, ticker, price, quantity, second_password).await
     }
 
     async fn query_order(&self, order_number: &str) -> Result<order::OrderDetail> {

@@ -58,6 +58,7 @@ impl BrokerClient for MockBrokerClient {
         ticker: &str,
         price: &str,
         quantity: &str,
+        _second_password: &str,
     ) -> Result<order::NewOrderResult> {
         self.orders.lock().unwrap().push(MockOrder {
             side: side.as_str().to_string(),

@@ -64,7 +64,7 @@ pub struct OrderResult {
 
 pub async fn run(
     conn: &dyn DbClient,
-    _config: &AppConfig,
+    config: &AppConfig,
     spec: &InvestmentSpec,
     mut broker: Option<&mut dyn BrokerClient>,
     dry_run: bool,
@@ -364,7 +364,17 @@ pub async fn run(
                 .await?;
 
             match client
-                .place_order(sig.side, &sig.ticker, &price_str, &quantity)
+                .place_order(
+                    sig.side,
+                    &sig.ticker,
+                    &price_str,
+                    &quantity,
+                    config
+                        .tachibana
+                        .as_ref()
+                        .and_then(|t| t.second_password.as_deref())
+                        .unwrap_or(""),
+                )
                 .await
             {
                 Ok(result) => {

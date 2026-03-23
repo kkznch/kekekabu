@@ -9,6 +9,7 @@ pub fn build_new_order_json(
     ticker: &str,
     price: &str,
     quantity: &str,
+    second_password: &str,
 ) -> serde_json::Value {
     let baibai_kubun = match side {
         Side::Buy => "3",
@@ -17,18 +18,21 @@ pub fn build_new_order_json(
 
     serde_json::json!({
         "sCLMID": "CLMKabuNewOrder",
+        "sZyoutoekiKazeiC": "1",                   // 特定口座
         "sIssueCode": ticker,
-        "sOrderSizyouC": "00",                    // 東証
-        "sOrderBaibaiKubun": baibai_kubun,
-        "sGenkinSinyouKubun": "0",                 // 現物
-        "sOrderCondition": "0",                    // 通常
-        "sOrderOrderPriceKubun": "2",              // 指値
-        "sOrderOrderPrice": price,
-        "sOrderOrderSuryou": quantity,
-        "sOrderOrderExpireDay": "0",               // 当日限り
-        "sGyousyaCode": "",
-        "sOrderTatebiType": "",
-        "sOrderTategyokuNumber": "",
+        "sSizyouC": "00",                           // 東証
+        "sBaibaiKubun": baibai_kubun,
+        "sCondition": "0",                          // 指定なし
+        "sOrderPrice": price,
+        "sOrderSuryou": quantity,
+        "sGenkinShinyouKubun": "0",                 // 現物
+        "sOrderExpireDay": "0",                     // 当日限り
+        "sGyakusasiOrderType": "0",                 // 通常（逆指値なし）
+        "sGyakusasiZyouken": "0",                   // 指定なし
+        "sGyakusasiPrice": "*",                     // 指定なし
+        "sTatebiType": "*",                         // 指定なし（現物）
+        "sTategyokuZyoutoekiKazeiC": "*",           // 指定なし
+        "sSecondPassword": second_password,
         "p_no": request::next_p_no(),
         "p_sd_date": request::p_sd_date(),
     })
@@ -114,9 +118,9 @@ pub fn parse_order_detail_value(value: &serde_json::Value) -> Result<OrderDetail
         json_str(value, "sOrderNumber").context("Missing sOrderNumber in order detail")?;
     let issue_code = json_str(value, "sIssueCode").unwrap_or_default();
     let status_code = json_str(value, "sOrderStatusCode").unwrap_or_default();
-    let baibai_kubun = json_str(value, "sOrderBaibaiKubun").unwrap_or_default();
-    let order_price = json_str(value, "sOrderOrderPrice").unwrap_or_default();
-    let order_quantity = json_str(value, "sOrderOrderSuryou").unwrap_or_default();
+    let baibai_kubun = json_str(value, "sBaibaiKubun").unwrap_or_default();
+    let order_price = json_str(value, "sOrderPrice").unwrap_or_default();
+    let order_quantity = json_str(value, "sOrderSuryou").unwrap_or_default();
     let filled_price = json_str(value, "sYakuzyouPrice");
     let filled_quantity = json_str(value, "sYakuzyouSuryou");
 
@@ -138,19 +142,23 @@ mod tests {
 
     #[test]
     fn test_build_new_order_buy() {
-        let json = build_new_order_json(Side::Buy, "7203", "2500", "100");
+        let json = build_new_order_json(Side::Buy, "7203", "2500", "100", "pass");
         assert_eq!(json["sCLMID"], "CLMKabuNewOrder");
         assert_eq!(json["sIssueCode"], "7203");
-        assert_eq!(json["sOrderBaibaiKubun"], "3"); // buy
-        assert_eq!(json["sOrderOrderPriceKubun"], "2"); // limit
-        assert_eq!(json["sOrderOrderPrice"], "2500");
-        assert_eq!(json["sOrderOrderSuryou"], "100");
+        assert_eq!(json["sBaibaiKubun"], "3"); // buy
+        assert_eq!(json["sOrderPrice"], "2500");
+        assert_eq!(json["sOrderSuryou"], "100");
+        assert_eq!(json["sZyoutoekiKazeiC"], "1"); // 特定口座
+        assert_eq!(json["sSecondPassword"], "pass");
+        assert_eq!(json["sGenkinShinyouKubun"], "0"); // 現物
+        assert_eq!(json["sGyakusasiOrderType"], "0"); // 通常
+        assert_eq!(json["sGyakusasiPrice"], "*"); // 指定なし
     }
 
     #[test]
     fn test_build_new_order_sell() {
-        let json = build_new_order_json(Side::Sell, "6758", "15000", "200");
-        assert_eq!(json["sOrderBaibaiKubun"], "1"); // sell
+        let json = build_new_order_json(Side::Sell, "6758", "15000", "200", "pass");
+        assert_eq!(json["sBaibaiKubun"], "1"); // sell
     }
 
     #[test]
@@ -187,8 +195,8 @@ mod tests {
         let body = r#"{
             "p_errno":"0","sResultCode":"0",
             "sOrderNumber":"ORD001","sIssueCode":"7203",
-            "sOrderStatusCode":"10","sOrderBaibaiKubun":"3",
-            "sOrderOrderPrice":"2500","sOrderOrderSuryou":"100",
+            "sOrderStatusCode":"10","sBaibaiKubun":"3",
+            "sOrderPrice":"2500","sOrderSuryou":"100",
             "sYakuzyouPrice":"2500","sYakuzyouSuryou":"100"
         }"#;
         let detail = parse_order_detail_response(body).unwrap();

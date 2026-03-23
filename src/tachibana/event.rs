@@ -7,6 +7,8 @@ pub struct FillNotification {
     pub issue_code: String,
     pub filled_price: String,
     pub filled_quantity: String,
+    /// true if partial fill (sOrderStatusCode="9"), false if full fill ("10")
+    pub is_partial: bool,
 }
 
 /// Try to parse a WebSocket message as a fill notification (EC event).
@@ -37,6 +39,7 @@ pub fn parse_fill_notification(text: &str) -> Option<FillNotification> {
         issue_code,
         filled_price,
         filled_quantity,
+        is_partial: status_code == "9",
     })
 }
 
@@ -69,6 +72,7 @@ mod tests {
         assert_eq!(fill.issue_code, "7203");
         assert_eq!(fill.filled_price, "2500");
         assert_eq!(fill.filled_quantity, "100");
+        assert!(!fill.is_partial);
     }
 
     #[test]
@@ -90,6 +94,7 @@ mod tests {
         let fill = parse_fill_notification(msg).unwrap();
         assert_eq!(fill.order_number, "ORD002");
         assert_eq!(fill.filled_quantity, "50");
+        assert!(fill.is_partial);
     }
 
     #[test]

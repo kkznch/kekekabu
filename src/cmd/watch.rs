@@ -158,7 +158,7 @@ async fn process_fill(
 
     conn.update_order_and_record_fill(FillParams {
         order_id: order.id,
-        status: "filled".to_string(),
+        status: if fill.is_partial { "partial" } else { "filled" }.to_string(),
         tachibana_order_id: None,
         filled_price: Some(fill.filled_price.clone()),
         filled_quantity: Some(fill.filled_quantity.clone()),

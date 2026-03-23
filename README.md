@@ -185,7 +185,7 @@ cargo run -- config validate
 
 環境変数 `TACHIBANA_USER_ID`, `TACHIBANA_PASSWORD`, `TACHIBANA_SECOND_PASSWORD`, `TACHIBANA_ENVIRONMENT` でも設定可能です。
 
-`--demo` フラグを使うと config の environment 設定に関わらずデモ環境に切り替わります。デモ環境では API エンドポイント（`demo.e-shiten.jp`）と DB ファイル（`kekekabu-demo.db`）が自動的に分離されます。
+`--demo` フラグを使うと config の environment 設定に関わらずデモ環境に切り替わります。デモ環境では API エンドポイント（`demo-kabuka.e-shiten.jp`）と DB ファイル（`kekekabu-demo.db`）が自動的に分離されます。
 
 ### `[spec]` — 投資戦略
 

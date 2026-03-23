@@ -5,7 +5,7 @@
 ## Requirements
 
 ### Requirement: 売買シグナルの生成と発注
-システムは SHALL execute コマンド内のシグナル（Signal 構造体）および注文結果（OrderResult 構造体）の売買方向フィールドとして `Side` enum を使用する。文字列リテラル `"buy"` / `"sell"` の直接使用を排除する。当日の evaluations を処理し、decision とスコアに基づいてシグナルを生成する。発注時は config の `tachibana.second_password` を `BrokerClient::place_order` の `second_password` 引数として渡す。
+システムは SHALL execute コマンド内のシグナル（Signal 構造体）および注文結果（OrderResult 構造体）の売買方向フィールドとして `Side` enum を使用する。文字列リテラル `"buy"` / `"sell"` の直接使用を排除する。当日の evaluations を処理し、decision とスコアに基づいてシグナルを生成する。発注時は config の `tachibana.second_password` を `BrokerClient::place_order` の `second_password` 引数として渡す。execute は注文発注後に即座に結果を返し、WebSocket による約定待受は行わない。約定の検知は `watch` コマンドまたは次回 execute の settle フェーズに委ねる。
 
 #### Scenario: Buy シグナルの生成
 - **WHEN** eval の判断が Buy で、冪等性チェック（order_exists_for_evaluation）を通過し、score >= 70 の場合

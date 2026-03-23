@@ -5,7 +5,7 @@
 ## Requirements
 
 ### Requirement: 立花証券 API 認証
-システムは SHALL 立花証券 e支店 API の認証 I/F に HTTPS POST で圧縮された JSON body を送信してログインし、レスポンスを展開して仮想 URL（sUrlRequest, sUrlEvent, sUrlEventWebSocket）を取得してセッションを管理する。
+システムは SHALL 立花証券 e支店 API の認証 I/F に HTTPS POST で圧縮された JSON body を送信してログインし、レスポンスを展開して仮想 URL（sUrlRequest, sUrlEvent, sUrlEventWebSocket）を取得してセッションを管理する。AUTH URL は `TachibanaConfig` の `environment` フィールドに基づき、本番（`kabuka.e-shiten.jp`）とデモ（`demo-kabuka.e-shiten.jp`）を切り替える。
 
 #### Scenario: ログイン成功（圧縮レスポンス）
 - **WHEN** 有効な userId, password, secondPassword で圧縮リクエストを送信した場合

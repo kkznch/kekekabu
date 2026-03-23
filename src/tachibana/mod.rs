@@ -218,7 +218,7 @@ impl TachibanaClient {
 
             let compressed = compress::compress(&json);
             let body = request::build_request_body(&compressed)?;
-            // Best-effort logout — don't fail if it errors
+            // Best-effort logout — don't fail if it errors, response not uncompressed intentionally
             match self
                 .http
                 .post(&session.request_url)

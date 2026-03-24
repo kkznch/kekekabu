@@ -522,7 +522,7 @@ Retrieves a list of current orders with optional filters.
 | `sOrderYakuzyouPrice` | Fill price |
 | `sOrderUtidekiKbn` | Partial fill flag: `""` = no split, `"2"` = split |
 | `sOrderSikkouDay` | Execution date `YYYYMMDD` |
-| `sOrderStatusCode` | Status code (see section 8.2) |
+| `sOrderStatusCode` | Status code (see section 9.2) |
 | `sOrderStatus` | Status name text |
 | `sOrderYakuzyouStatus` | Fill status: `"0"` = unfilled, `"1"` = partial, `"2"` = full, `"3"` = filling |
 | `sOrderOrderDateTime` | Order datetime `YYYYMMDDHHMMSS` |
@@ -569,7 +569,7 @@ Retrieves a list of current orders with optional filters.
 | `sOrderOrderPrice` | string | Order price |
 | `sOrderOrderSuryou` | string | Order quantity |
 | `sOrderCurrentSuryou` | string | Effective quantity |
-| `sOrderStatusCode` | string | Status code (see section 8.2) |
+| `sOrderStatusCode` | string | Status code (see section 9.2) |
 | `sOrderStatus` | string | Status name |
 | `sOrderOrderDateTime` | string | Order datetime `YYYYMMDDHHMMSS` |
 | `sOrderOrderExpireDay` | string | Expiration date `YYYYMMDD` |
@@ -1630,7 +1630,7 @@ EC events are the primary mechanism for detecting order fills.
 | `p_evt_cmd` | string | `"EC"` |
 | `sOrderNumber` | string | Order number |
 | `sIssueCode` | string | Stock ticker |
-| `sOrderStatusCode` | string | Order status code (see section 8.2) |
+| `sOrderStatusCode` | string | Order status code (see section 9.2) |
 | `sYakuzyouPrice` | string | Fill price (when filled) |
 | `sYakuzyouSuryou` | string | Fill quantity (when filled) |
 
@@ -1673,9 +1673,141 @@ If server load becomes problematic due to WebSocket connections, Tachibana may i
 
 ---
 
-## 8. Error Handling
+## 8. EVENT I/F (WebSocket) — Detailed Specification
 
-### 8.1 p_errno (Request-Level Errors)
+> **Important**: EVENT I/F uses a proprietary format, NOT JSON. The REQUEST I/F compress/uncompress mechanism does NOT apply here. See `api_event_if_v4r7.pdf` for the full specification.
+
+### 8.1 Connection Method
+
+The WebSocket URL is obtained from the login response field `sUrlEventWebSocket`. Connect using WebSocket protocol with query parameters:
+
+```
+wss://...?p_rid=0&p_board_no=1000&p_eno=0&p_evt_cmd=EC
+```
+
+- **NOT JSON** — uses a proprietary binary/text format
+- ShiftJIS text items are **BASE64 encoded** in the WebSocket version
+
+### 8.2 Query Parameters
+
+| Param | Description | Example |
+|-------|-------------|---------|
+| `p_rid` | Board application ID (0 for API without price feed) | `0` |
+| `p_board_no` | Board number (1000 for API) | `1000` |
+| `p_gyou_no` | Row number (optional) | - |
+| `p_issue_code` | Issue code (optional) | - |
+| `p_mkt_code` | Market code (optional) | - |
+| `p_eno` | Event number to resume from (0 = all) | `0` |
+| `p_evt_cmd` | Event types to subscribe, comma-separated | `ST,KP,EC` |
+
+### 8.3 Data Format
+
+- Field separator: `^A` (0x01)
+- Key/value separator: `^B` (0x02)
+- Value-internal separator: `^C` (0x03)
+
+Example:
+```
+p_no^B208^Ap_date^B2018.12.03^Ap_cmd^BST
+```
+
+### 8.4 Common Notification Fields
+
+| No | Field | Description |
+|----|-------|-------------|
+| 1 | `p_no` | Sequence number (per connection, starting from 1) |
+| 2 | `p_date` | Notification timestamp |
+| 3 | `p_cmd` | Event type (`ST`, `KP`, `FD`, `EC`, `NS`, etc.) |
+
+### 8.5 Event Types (p_evt_cmd)
+
+| No | Value | Description | Notes |
+|----|-------|-------------|-------|
+| 1 | `ST` | Error status | Sent on error, then disconnects |
+| 2 | `KP` | Keep-alive | Every 5 seconds if no other notifications |
+| 3 | `FD` | Market price data | Full snapshot first, then changes only |
+| 4 | `EC` | Order/execution events | All undeleted events for the day, then real-time |
+| 5 | `NS` | News | All undeleted news for the day, then real-time |
+| 7 | `SS` | System status | Same as above |
+| 8 | `US` | Operation status | Same as above |
+
+### 8.6 EC (Order/Execution) Notification Fields
+
+| No | Field | Example | Description |
+|----|-------|---------|-------------|
+| 1 | `p_PV` | `MSGSV` | Provider |
+| 2 | `p_ENO` | `10507` | Event number (unique per business day) |
+| 3 | `p_ALT` | `1` | Alert flag (`1`=initial, `0`=resend) |
+| 4 | `p_NT` | `100` | Notification type (see below) |
+| 5 | `p_ON` | `3000945` | Order number |
+| 6 | `p_ED` | `20181203` | Business date (YYYYMMDD) |
+| 7 | `p_OON` | `0` | Parent order number (`0`=parent) |
+| 8 | `p_OT` | `1` | Order type (`1`=parent, `2`=child) |
+| 9 | `p_ST` | `1` | Product type (`1`=stock, `3`=futures, `4`=options) |
+| 10 | `p_IC` | `2468` | Issue code |
+| 11 | `p_MC` | `00` | Market code |
+| 12 | `p_BBKB` | `1` | Buy/Sell (`1`=sell, `3`=buy) |
+| 13 | `p_THKB` | `0` | Trade type (`0`=spot, `2`=margin new, `4`=margin close) |
+| 14 | `p_CRSJ` | `0` | Execution condition (`0`=none, `2`=opening, `4`=closing, `6`=fail) |
+| 15 | `p_CRPRKB` | `2` | Price type (`0`=unused, `1`=market, `2`=limit) |
+| 19 | `p_CRPR` | `850.000000` | Order price |
+| 20 | `p_CRSR` | `5300` | Order quantity |
+| 21 | `p_CRTKSR` | `0` | Cancelled quantity |
+| 22 | `p_CREPSR` | `0` | Expired quantity |
+| 23 | `p_CREXSR` | `0` | Executed quantity |
+| 24 | `p_ODST` | `0` | Order status (`0`=pending, `1`=accepted, `2`=error, `3`=partial expire, `4`=all expire, `5`=carried) |
+| 26 | `p_TTST` | `0` | Correction/Cancel status (`0`=none, `1`-`9` various states) |
+| 27 | `p_EXST` | `0` | Execution status (`0`=unfilled, `1`=partial, `2`=filled, `3`=filling) |
+| 28 | `p_LMIT` | `20181211` | Expiry date (YYYYMMDD) |
+| 31 | `p_EPRC` | `""` | Expiry reason code (from exchange) |
+| 32 | `p_EXPR` | `0.000000` | Execution price (from exchange) |
+| 33 | `p_EXSR` | `0` | Execution quantity (from exchange) |
+| 34 | `p_EXRC` | `""` | Exchange error code |
+| 35 | `p_EXDT` | `20181203132243` | Notification datetime (YYYYMMDDHHMMSS) |
+| 36 | `p_IN` | `フュートレック` | Issue name (BASE64 in WebSocket) |
+
+#### p_NT (Notification Type) Values
+
+| p_NT | Description |
+|------|-------------|
+| `1` | 注文受付 (Order accepted) |
+| `2` | 訂正受付 (Correction accepted) |
+| `3` | 取消受付 (Cancel accepted) |
+| `4`-`6` | 受付エラー (Acceptance errors) |
+| `7`-`9` | 登録エラー (Registration errors) |
+| `10` | 訂正完了 (Correction complete) |
+| `11` | 取消完了 (Cancel complete) |
+| `12` | 約定成立 (Execution filled) |
+| `13` | 失効 (Expired) |
+| `14` | 失効（連続注文） (Expired — chained order) |
+| `100` | 注文状態変更 (Status change) |
+
+### 8.7 ST (Error Status) Fields
+
+| No | Field | Description |
+|----|-------|-------------|
+| 1 | `p_errno` | Error code (see p_errno table below) |
+| 2 | `p_err` | Error message |
+
+### 8.8 p_errno Error Codes (EVENT I/F)
+
+| p_errno | p_err | Description |
+|---------|-------|-------------|
+| `0` | `""` | No problem |
+| `1` | `""` | Board no data |
+| `2` | `セッションが切断しました。` | Session inactive |
+| `9` | `システム、サービス停止中。` | Service offline |
+| `-1` | `引数エラー。` | Parameter error |
+| `-2` | *(message)* | Database access error |
+| `-3` | *(message)* | SAPSV access error |
+| `-12` | `システム、サービス停止中。` | Service is offline |
+| `-62` | `システム、情報提供時間外。` | Stockhouse is offline |
+
+---
+
+## 9. Error Handling
+
+### 9.1 p_errno (Request-Level Errors)
 
 | p_errno | Description |
 |---------|-------------|
@@ -1687,7 +1819,7 @@ If server load becomes problematic due to WebSocket connections, Tachibana may i
 
 When `p_errno != 0`, the `p_err` field contains the error message text.
 
-### 8.2 sOrderStatusCode (Order Status Codes)
+### 9.2 sOrderStatusCode (Order Status Codes)
 
 | Code | Japanese | English | kekekabu Mapping |
 |------|----------|---------|-----------------|
@@ -1714,40 +1846,40 @@ When `p_errno != 0`, the `p_err` field contains the error message text.
 | `21` | 障害処理 | Error | (error) |
 | `50` | 発注中 (逆指値) | Submitting (stop order) | (transient) |
 
-### 8.3 sResultCode (Business Result Codes)
+### 9.3 sResultCode (Business Result Codes)
 
 | sResultCode | Description |
 |-------------|-------------|
 | `"0"` | Success |
 | Non-zero | Business error (details in `sResultText`) |
 
-### 8.4 Warning Codes
+### 9.4 Warning Codes
 
 Phone verification related warnings were added in v4r7. Refer to the manual section 7 (result/warning code table) for the complete list.
 
 ---
 
-## 9. Important Notes
+## 10. Important Notes
 
-### 9.1 Rate Limits
+### 10.1 Rate Limits
 
 - **10 requests/second** per customer, enforced server-side
 - Excessive load may result in account suspension
 
-### 9.2 Operating Hours
+### 10.2 Operating Hours
 
 - Available during e-Shiten system operating hours
 - System closure at approximately 03:30 JST daily
 - Maintenance and holidays follow e-Shiten standard web schedule
 - If the API subsystem fails but e-Shiten is operational, use the standard web interface for order management
 
-### 9.3 Encoding
+### 10.3 Encoding
 
 - **Request**: JSON with Shift-JIS encoding for Japanese characters. When using GET, the JSON is URL-encoded.
 - **Response**: JSON in Shift-JIS encoding. Must decode from Shift-JIS to UTF-8 in client code.
 - Response compression: gzip via Apache mod_deflate for `application/json` and `text/json` content types.
 
-### 9.4 URL Encoding Requirements
+### 10.4 URL Encoding Requirements
 
 Characters with special meaning in URLs must be percent-encoded:
 
@@ -1761,14 +1893,14 @@ Characters with special meaning in URLs must be percent-encoded:
 
 This is particularly important for passwords that may contain these characters.
 
-### 9.5 Serial Request Requirement
+### 10.5 Serial Request Requirement
 
 REQUEST I/F operates in a strict serial (one-at-a-time) mode:
 - Send a request, wait for the response, then send the next request
 - Parallel requests to the same virtual URL result in undefined behavior
 - **Exception**: Master data download via `sUrlMaster` can run in parallel
 
-### 9.6 Duplicate Request Prevention (p_no)
+### 10.6 Duplicate Request Prevention (p_no)
 
 The `p_no` field prevents duplicate request processing:
 - Initialize at login time
@@ -1776,24 +1908,24 @@ The `p_no` field prevents duplicate request processing:
 - Server rejects requests where `p_no <= previous p_no`
 - This guards against browser/client automatic retry sending duplicate orders
 
-### 9.7 Server Fault Tolerance
+### 10.7 Server Fault Tolerance
 
 - API servers run on multiple parallel instances
 - If one server fails, traffic is routed to surviving servers
 - Requests in-flight during a server crash will not receive an API response (HTTPS-level error)
 - After such failures, check order status via `CLMOrderListDetail` or the standard web interface
 
-### 9.8 Insider Trading Restriction
+### 10.8 Insider Trading Restriction
 
 Stocks declared for insider trading restrictions cannot be traded via API for new/correction orders.
 Cancellation orders ARE permitted for insider-declared stocks (emergency consideration).
 Use the standard web interface for new/correction orders on insider-declared stocks.
 
-### 9.9 Second Password Requirement
+### 10.9 Second Password Requirement
 
 The second password (`sSecondPassword`) is required for all order input operations (new, correct, cancel) regardless of the "password omission" setting in the standard web interface.
 
-### 9.10 v4r8 POST Compatibility
+### 10.10 v4r8 POST Compatibility
 
 When migrating from v4r7 to v4r8:
 - Simply change the URL prefix from `e_api_v4r7` to `e_api_v4r8`
@@ -1802,16 +1934,16 @@ When migrating from v4r7 to v4r8:
 
 ---
 
-## 10. Provided Functions Summary
+## 11. Provided Functions Summary
 
-### 10.1 Auth Functions (Auth I/F)
+### 11.1 Auth Functions (Auth I/F)
 
 | sCLMID | Function |
 |--------|----------|
 | `CLMAuthLoginRequest` / `CLMAuthLoginAck` | Authenticate and obtain virtual URLs |
 | `CLMAuthLogoutRequest` / `CLMAuthLogoutAck` | Invalidate virtual URLs |
 
-### 10.2 Business Functions (REQUEST I/F via sUrlRequest)
+### 11.2 Business Functions (REQUEST I/F via sUrlRequest)
 
 | sCLMID | Function |
 |--------|----------|
@@ -1832,7 +1964,7 @@ When migrating from v4r7 to v4r8:
 | `CLMZanKaiSinyouSinkidateSyousai` | Margin new position available amount detail |
 | `CLMZanRealHosyoukinRitu` | Real-time margin ratio |
 
-### 10.3 Master Functions (REQUEST I/F via sUrlMaster)
+### 11.3 Master Functions (REQUEST I/F via sUrlMaster)
 
 | sCLMID | Function |
 |--------|----------|
@@ -1866,26 +1998,32 @@ When migrating from v4r7 to v4r8:
 | `CLMOrderErrReason` | Exchange error/reason codes |
 | `CLMEventDownloadComplete` | Download complete marker |
 
-### 10.4 Market Price Functions (REQUEST I/F via sUrlPrice)
+### 11.4 Market Price Functions (REQUEST I/F via sUrlPrice)
 
 | sCLMID | Function |
 |--------|----------|
 | `CLMMfdsGetMarketPrice` | Market price query (max 120 tickers, v4r2+) |
 | `CLMMfdsGetMarketPriceHistory` | Historical OHLCV query (~20 years, v4r3+) |
 
-### 10.5 Event Functions (EVENT I/F via sUrlEvent or sUrlEventWebSocket)
+### 11.5 Event Functions (EVENT I/F via sUrlEvent or sUrlEventWebSocket)
 
-| Event Type | Description |
-|------------|-------------|
-| Order/Execution notifications | Order status changes, fills |
-| System status | Open/close notifications |
-| Operation status | Order acceptance start/end |
-| Real-time market prices | Stock prices (throttled) |
-| Real-time news | News delivery |
+| Event Type (`p_evt_cmd`) | Description | Connection |
+|---------------------------|-------------|------------|
+| `EC` — Order/Execution | Order status changes, fills, rejections | `sUrlEventWebSocket` with `p_evt_cmd=EC` |
+| `ST` — Error Status | Error notification, then disconnect | Always delivered |
+| `KP` — Keep-alive | Heartbeat every 5s if idle | Always delivered |
+| `FD` — Market Price | Real-time stock prices (full snapshot + delta) | `p_evt_cmd=FD` |
+| `NS` — News | Real-time news delivery | `p_evt_cmd=NS` |
+| `SS` — System Status | Open/close notifications | `p_evt_cmd=SS` |
+| `US` — Operation Status | Order acceptance start/end | `p_evt_cmd=US` |
+
+**WebSocket connection**: `sUrlEventWebSocket` + query params `?p_rid=0&p_board_no=1000&p_eno=0&p_evt_cmd=EC` (see section 8 for full details).
+
+**Data format**: Proprietary (NOT JSON). Field separator `^A` (0x01), key/value separator `^B` (0x02). See section 8.3.
 
 ---
 
-## 11. Version History
+## 12. Version History
 
 | Version | Date | Key Changes |
 |---------|------|-------------|

@@ -80,25 +80,13 @@
 - **WHEN** sOrderStatusCode が "12"（全部失効）の注文を照会した場合
 - **THEN** 失効状態を返す
 
-### Requirement: EVENT I/F WebSocket による約定通知受信
-システムは SHALL sUrlEventWebSocket に WebSocket 接続し、EC（約定通知）イベントのサブスクリプションメッセージを送信した上で、約定通知をリアルタイムで受信する。全部約定（status "10"）と一部約定（status "9"）の両方を処理する。
+### Requirement: EVENT I/F WebSocket 接続
+システムは SHALL 立花証券 EVENT I/F WebSocket に URL クエリパラメータ方式で接続する。サブスクリプションは接続 URL に `p_rid`, `p_board_no`, `p_eno`, `p_evt_cmd` を指定する。通知データは独自バイナリフォーマット（`^A`=0x01 フィールド区切り、`^B`=0x02 キー/値区切り、`^C`=0x03 値内区切り）である。REQUEST I/F の compress/uncompress は EVENT I/F には適用しない。
 
-#### Scenario: WebSocket 接続とサブスクリプション
-- **WHEN** WebSocket に接続した場合
-- **THEN** EC イベントのサブスクリプションメッセージ（p_evt_cmd="EC"）を送信してから約定通知の待機を開始する
+#### Scenario: WebSocket URL 構築
+- **WHEN** EVENT I/F WebSocket に接続する場合
+- **THEN** ログインレスポンスの `sUrlEventWebSocket` に `?p_rid=0&p_board_no=1000&p_eno=0&p_evt_cmd=EC` を付与した URL に接続する
 
-#### Scenario: 全部約定通知の受信
-- **WHEN** WebSocket で sOrderStatusCode="10" の約定通知を受信した場合
-- **THEN** 約定情報（銘柄、約定価格、約定数量）を含む通知として処理する
-
-#### Scenario: 一部約定通知の受信
-- **WHEN** WebSocket で sOrderStatusCode="9" の約定通知を受信した場合
-- **THEN** 一部約定分の約定情報（約定価格、約定数量）を含む通知として処理する
-
-#### Scenario: タイムアウト切断
-- **WHEN** 指定時間内に約定通知が受信されなかった場合
-- **THEN** WebSocket 接続を切断し、タイムアウトを返す
-
-#### Scenario: 接続エラー
-- **WHEN** WebSocket 接続に失敗した場合
-- **THEN** エラーログを出力し、settle フォールバック（REQUEST I/F 照会）で対応する
+#### Scenario: 独自フォーマットの通知受信
+- **WHEN** WebSocket からテキストフレームを受信した場合
+- **THEN** `0x01` でフィールド分割、各フィールドを `0x02` でキー/値に分割し、HashMap として返す

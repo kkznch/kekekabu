@@ -1,14 +1,13 @@
 use anyhow::{Context, Result};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::StreamExt;
 use std::time::Duration;
 use tokio_tungstenite::tungstenite::Message;
-use tracing::{info, warn};
+use tracing::{debug, info, trace, warn};
 
 use crate::config::AppConfig;
 use crate::db::{DbClient, FillParams};
 use crate::tachibana::TachibanaClient;
-use crate::tachibana::compress;
-use crate::tachibana::event::{build_event_subscribe_json, parse_fill_notification};
+use crate::tachibana::event::{EventMessage, build_event_ws_url, parse_event_message};
 
 /// Run the watch command: connect to Tachibana EVENT I/F WebSocket and
 /// listen for fill notifications, updating the DB in real time.
@@ -36,9 +35,11 @@ pub async fn run(conn: &dyn DbClient, config: &AppConfig) -> Result<()> {
             }
         };
 
-        info!(ws_url = %session.event_ws_url, "Connecting to EVENT I/F WebSocket");
+        // Build WebSocket URL with EC subscription query params
+        let ws_url = build_event_ws_url(&session.event_ws_url);
+        info!(ws_url = %ws_url, "Connecting to EVENT I/F WebSocket");
 
-        let ws_stream = match tokio_tungstenite::connect_async(&session.event_ws_url).await {
+        let ws_stream = match tokio_tungstenite::connect_async(&ws_url).await {
             Ok((stream, _)) => stream,
             Err(e) => {
                 warn!(error = %e, backoff_secs, "Failed to connect WebSocket, retrying after backoff");
@@ -49,22 +50,10 @@ pub async fn run(conn: &dyn DbClient, config: &AppConfig) -> Result<()> {
             }
         };
 
-        let (mut write, mut read) = ws_stream.split();
-
-        // Send EC subscription (compressed)
-        let subscribe_json = build_event_subscribe_json();
-        let compressed = compress::compress(&subscribe_json);
-        let subscribe_msg = compressed.to_string();
-        if let Err(e) = write.send(Message::Text(subscribe_msg.into())).await {
-            warn!(error = %e, "Failed to send EVENT subscribe message");
-            let _ = client.logout().await;
-            tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
-            backoff_secs = (backoff_secs * 2).min(MAX_BACKOFF_SECS);
-            continue;
-        }
+        // No subscription message needed — EVENT I/F uses URL query params
+        let (_write, mut read) = ws_stream.split();
 
         info!("WebSocket connected, listening for fill notifications (Ctrl-C to stop)");
-        // Reset backoff on successful connection
         backoff_secs = 1;
 
         let mut shutdown = false;
@@ -79,26 +68,41 @@ pub async fn run(conn: &dyn DbClient, config: &AppConfig) -> Result<()> {
                 msg = read.next() => {
                     match msg {
                         Some(Ok(Message::Text(text))) => {
-                            // Uncompress EVENT I/F message (numeric keys → string keys)
-                            let uncompressed_text = if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&text) {
-                                compress::uncompress(&raw).to_string()
-                            } else {
-                                text.to_string()
-                            };
-                            if let Some(fill) = parse_fill_notification(&uncompressed_text) {
-                                info!(
-                                    order_number = %fill.order_number,
-                                    ticker = %fill.issue_code,
-                                    price = %fill.filled_price,
-                                    qty = %fill.filled_quantity,
-                                    "Fill notification received"
-                                );
-                                if let Err(e) = process_fill(conn, &fill).await {
-                                    warn!(
-                                        order_number = %fill.order_number,
-                                        error = %e,
-                                        "Failed to process fill notification"
+                            debug!(raw_len = text.len(), "Received EVENT message");
+                            let event = parse_event_message(&text);
+                            match event {
+                                EventMessage::EC(ec) => {
+                                    info!(
+                                        order_number = %ec.order_number,
+                                        notification_type = %ec.notification_type,
+                                        execution_status = %ec.execution_status,
+                                        issue_code = %ec.issue_code,
+                                        "EC event received"
                                     );
+                                    // p_NT=12 means execution filled
+                                    if ec.notification_type == "12" {
+                                        let is_partial = ec.execution_status == "1";
+                                        if let Err(e) = process_fill(conn, &ec, is_partial).await {
+                                            warn!(
+                                                order_number = %ec.order_number,
+                                                error = %e,
+                                                "Failed to process fill notification"
+                                            );
+                                        }
+                                    }
+                                }
+                                EventMessage::KP => {
+                                    trace!("Keep-alive received");
+                                }
+                                EventMessage::ST(st) => {
+                                    warn!(
+                                        errno = %st.errno,
+                                        err = %st.err,
+                                        "EVENT I/F error status received (server will disconnect)"
+                                    );
+                                }
+                                EventMessage::Other(cmd) => {
+                                    debug!(cmd = %cmd, "Unhandled EVENT type");
                                 }
                             }
                         }
@@ -135,20 +139,21 @@ pub async fn run(conn: &dyn DbClient, config: &AppConfig) -> Result<()> {
     }
 }
 
-/// Process a single fill notification: look up order in DB and update accordingly.
+/// Process a single fill notification (p_NT=12): look up order in DB and update.
 async fn process_fill(
     conn: &dyn DbClient,
-    fill: &crate::tachibana::event::FillNotification,
+    ec: &crate::tachibana::event::ExecutionEvent,
+    is_partial: bool,
 ) -> Result<()> {
     let pending_orders = conn.list_pending_orders().await?;
 
     let order = pending_orders
         .iter()
-        .find(|o| o.tachibana_order_id.as_deref() == Some(&fill.order_number));
+        .find(|o| o.tachibana_order_id.as_deref() == Some(&ec.order_number));
 
     let Some(order) = order else {
         info!(
-            order_number = %fill.order_number,
+            order_number = %ec.order_number,
             "No matching pending order found in DB, skipping"
         );
         return Ok(());
@@ -158,10 +163,10 @@ async fn process_fill(
 
     conn.update_order_and_record_fill(FillParams {
         order_id: order.id,
-        status: if fill.is_partial { "partial" } else { "filled" }.to_string(),
+        status: if is_partial { "partial" } else { "filled" }.to_string(),
         tachibana_order_id: None,
-        filled_price: Some(fill.filled_price.clone()),
-        filled_quantity: Some(fill.filled_quantity.clone()),
+        filled_price: Some(ec.execution_price.clone()),
+        filled_quantity: Some(ec.execution_quantity.clone()),
         filled_at: Some(filled_at),
         ticker: order.ticker.clone(),
         side: order.side.clone(),
@@ -173,8 +178,9 @@ async fn process_fill(
         ticker = %order.ticker,
         order_id = order.id,
         side = %order.side,
-        price = %fill.filled_price,
-        quantity = %fill.filled_quantity,
+        price = %ec.execution_price,
+        quantity = %ec.execution_quantity,
+        partial = is_partial,
         "Fill recorded in DB"
     );
 

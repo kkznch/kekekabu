@@ -2,10 +2,13 @@ use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const LABEL: &str = "com.kekekabu.pipeline";
-const PLIST_FILENAME: &str = "com.kekekabu.pipeline.plist";
+const LABEL_PIPELINE: &str = "com.kekekabu.pipeline";
+const LABEL_EXECUTE: &str = "com.kekekabu.execute";
+const PLIST_FILENAME_PIPELINE: &str = "com.kekekabu.pipeline.plist";
+const PLIST_FILENAME_EXECUTE: &str = "com.kekekabu.execute.plist";
 
-const PLIST_TEMPLATE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+/// Pipeline plist: workflow run at 08:00
+const PLIST_TEMPLATE_PIPELINE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -29,6 +32,35 @@ const PLIST_TEMPLATE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
     <string>{log_dir}/kekekabu.log</string>
     <key>StandardErrorPath</key>
     <string>{log_dir}/kekekabu.err</string>
+</dict>
+</plist>
+"#;
+
+/// Execute plist: execute --live at 14:50 (before market close)
+const PLIST_TEMPLATE_EXECUTE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{label}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{bin}</string>
+        <string>execute</string>
+        <string>--live</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>14</integer>
+        <key>Minute</key>
+        <integer>50</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>{log_dir}/kekekabu-execute.log</string>
+    <key>StandardErrorPath</key>
+    <string>{log_dir}/kekekabu-execute.err</string>
 </dict>
 </plist>
 "#;
@@ -88,9 +120,18 @@ fn ensure_macos() -> Result<()> {
     Ok(())
 }
 
-fn plist_path() -> Result<PathBuf> {
+fn plist_path_pipeline() -> Result<PathBuf> {
     let home = home_dir()?;
-    Ok(home.join("Library/LaunchAgents").join(PLIST_FILENAME))
+    Ok(home
+        .join("Library/LaunchAgents")
+        .join(PLIST_FILENAME_PIPELINE))
+}
+
+fn plist_path_execute() -> Result<PathBuf> {
+    let home = home_dir()?;
+    Ok(home
+        .join("Library/LaunchAgents")
+        .join(PLIST_FILENAME_EXECUTE))
 }
 
 fn log_dir_path() -> Result<PathBuf> {
@@ -103,9 +144,16 @@ fn uid(rt: &dyn ServiceRuntime) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-fn generate_plist(bin_path: &str, log_path: &str) -> String {
-    PLIST_TEMPLATE
-        .replace("{label}", LABEL)
+fn generate_plist_pipeline(bin_path: &str, log_path: &str) -> String {
+    PLIST_TEMPLATE_PIPELINE
+        .replace("{label}", LABEL_PIPELINE)
+        .replace("{bin}", bin_path)
+        .replace("{log_dir}", log_path)
+}
+
+fn generate_plist_execute(bin_path: &str, log_path: &str) -> String {
+    PLIST_TEMPLATE_EXECUTE
+        .replace("{label}", LABEL_EXECUTE)
         .replace("{bin}", bin_path)
         .replace("{log_dir}", log_path)
 }
@@ -119,18 +167,22 @@ pub fn install(rt: &dyn ServiceRuntime) -> Result<()> {
     rt.create_dir_all(&logs)?;
     let log_str = logs.to_string_lossy();
 
-    let plist_content = generate_plist(&bin_str, &log_str);
-    let path = plist_path()?;
-
-    if let Some(parent) = path.parent() {
+    // Pipeline plist (workflow run at 08:00)
+    let pipeline_content = generate_plist_pipeline(&bin_str, &log_str);
+    let pipeline_path = plist_path_pipeline()?;
+    if let Some(parent) = pipeline_path.parent() {
         rt.create_dir_all(parent)?;
     }
+    rt.write_file(&pipeline_path, &pipeline_content)?;
 
-    rt.write_file(&path, &plist_content)?;
+    // Execute plist (execute --live at 14:50)
+    let execute_content = generate_plist_execute(&bin_str, &log_str);
+    let execute_path = plist_path_execute()?;
+    rt.write_file(&execute_path, &execute_content)?;
 
-    println!("Installed: {}", path.display());
-    println!("Label: {LABEL}");
-    println!("Schedule: daily at 08:00");
+    println!("Installed:");
+    println!("  Pipeline: {} (daily at 08:00)", pipeline_path.display());
+    println!("  Execute:  {} (daily at 14:50)", execute_path.display());
     println!("Binary: {bin_str}");
     println!();
     println!("Run `kabu service start` to activate.");
@@ -141,17 +193,16 @@ pub fn install(rt: &dyn ServiceRuntime) -> Result<()> {
 pub fn uninstall(rt: &dyn ServiceRuntime) -> Result<()> {
     ensure_macos()?;
 
-    let path = plist_path()?;
-    if !rt.file_exists(&path) {
-        println!("Not installed (no plist found)");
-        return Ok(());
-    }
-
     let uid = uid(rt)?;
-    let _ = rt.run_command("launchctl", &["bootout", &format!("gui/{uid}/{LABEL}")]);
 
-    rt.remove_file(&path)?;
-    println!("Uninstalled: {}", path.display());
+    for (label, path) in service_plists()? {
+        if !rt.file_exists(&path) {
+            continue;
+        }
+        let _ = rt.run_command("launchctl", &["bootout", &format!("gui/{uid}/{label}")]);
+        rt.remove_file(&path)?;
+        println!("Uninstalled: {}", path.display());
+    }
 
     Ok(())
 }
@@ -159,81 +210,89 @@ pub fn uninstall(rt: &dyn ServiceRuntime) -> Result<()> {
 pub fn start(rt: &dyn ServiceRuntime) -> Result<()> {
     ensure_macos()?;
 
-    let path = plist_path()?;
-    if !rt.file_exists(&path) {
-        bail!("Service not installed. Run `kabu service install` first.");
-    }
-
     let uid = uid(rt)?;
-    let path_str = path.to_string_lossy().to_string();
     let domain = format!("gui/{uid}");
-    let output = rt.run_command("launchctl", &["bootstrap", &domain, &path_str])?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("37") {
-            println!("Service is already running");
-            return Ok(());
+    for (label, path) in service_plists()? {
+        if !rt.file_exists(&path) {
+            bail!("Service not installed. Run `kabu service install` first.");
         }
-        bail!("launchctl bootstrap failed: {}", stderr);
+        let path_str = path.to_string_lossy().to_string();
+        let output = rt.run_command("launchctl", &["bootstrap", &domain, &path_str])?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("37") {
+                println!("{label}: already running");
+                continue;
+            }
+            bail!("launchctl bootstrap failed for {label}: {}", stderr);
+        }
+        println!("{label}: started");
     }
-
-    println!("Service started ({LABEL})");
     Ok(())
 }
 
 pub fn stop(rt: &dyn ServiceRuntime) -> Result<()> {
     ensure_macos()?;
 
-    let path = plist_path()?;
-    if !rt.file_exists(&path) {
-        bail!("Service not installed. Run `kabu service install` first.");
-    }
-
     let uid = uid(rt)?;
-    let target = format!("gui/{uid}/{LABEL}");
-    let output = rt.run_command("launchctl", &["bootout", &target])?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("3") {
-            println!("Service is not running");
-            return Ok(());
+    for (label, path) in service_plists()? {
+        if !rt.file_exists(&path) {
+            continue;
         }
-        bail!("launchctl bootout failed: {}", stderr);
+        let target = format!("gui/{uid}/{label}");
+        let output = rt.run_command("launchctl", &["bootout", &target])?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("3") {
+                println!("{label}: not running");
+                continue;
+            }
+            bail!("launchctl bootout failed for {label}: {}", stderr);
+        }
+        println!("{label}: stopped");
     }
-
-    println!("Service stopped ({LABEL})");
     Ok(())
 }
 
 pub fn status(rt: &dyn ServiceRuntime) -> Result<()> {
     ensure_macos()?;
 
-    let path = plist_path()?;
-    if !rt.file_exists(&path) {
+    let uid = uid(rt)?;
+    let plists = service_plists()?;
+    let any_installed = plists.iter().any(|(_, p)| rt.file_exists(p));
+
+    if !any_installed {
         println!("Status: Not installed");
         println!();
-        println!("Run `kabu service install` to set up the launchd service.");
+        println!("Run `kabu service install` to set up the launchd services.");
         return Ok(());
     }
 
-    println!("Label: {LABEL}");
-    println!("Plist: {}", path.display());
-
-    let uid = uid(rt)?;
-    let target = format!("gui/{uid}/{LABEL}");
-    let output = rt.run_command("launchctl", &["print", &target])?;
-
-    if output.status.success() {
-        println!("Status: Running");
-    } else {
-        println!("Status: Installed (not running)");
-        println!();
-        println!("Run `kabu service start` to activate.");
+    for (label, path) in &plists {
+        if !rt.file_exists(path) {
+            println!("{label}: Not installed");
+            continue;
+        }
+        let target = format!("gui/{uid}/{label}");
+        let output = rt.run_command("launchctl", &["print", &target])?;
+        if output.status.success() {
+            println!("{label}: Running");
+        } else {
+            println!("{label}: Installed (not running)");
+        }
     }
 
     Ok(())
+}
+
+/// Return all service plist (label, path) pairs.
+fn service_plists() -> Result<Vec<(&'static str, PathBuf)>> {
+    Ok(vec![
+        (LABEL_PIPELINE, plist_path_pipeline()?),
+        (LABEL_EXECUTE, plist_path_execute()?),
+    ])
 }
 
 #[cfg(test)]
@@ -322,76 +381,76 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_plist_contains_binary_path() {
-        let plist = generate_plist("/usr/local/bin/kabu", "/tmp/logs");
+    fn test_generate_plist_pipeline() {
+        let plist = generate_plist_pipeline("/usr/local/bin/kabu", "/tmp/logs");
         assert!(plist.contains("/usr/local/bin/kabu"));
-        assert!(plist.contains(LABEL));
-    }
-
-    #[test]
-    fn test_generate_plist_contains_schedule() {
-        let plist = generate_plist("/usr/local/bin/kabu", "/tmp/logs");
-        assert!(plist.contains("<key>Hour</key>"));
-        assert!(plist.contains("<integer>8</integer>"));
-        assert!(plist.contains("<key>Minute</key>"));
-        assert!(plist.contains("<integer>0</integer>"));
-    }
-
-    #[test]
-    fn test_generate_plist_contains_workflow_command() {
-        let plist = generate_plist("/path/to/kabu", "/tmp/logs");
-        assert!(plist.contains("<string>/path/to/kabu</string>"));
+        assert!(plist.contains(LABEL_PIPELINE));
         assert!(plist.contains("<string>workflow</string>"));
         assert!(plist.contains("<string>run</string>"));
-        // No longer uses /bin/sh -c
-        assert!(!plist.contains("/bin/sh"));
+        assert!(plist.contains("<integer>8</integer>"));
+        assert!(plist.contains("/tmp/logs/kekekabu.log"));
     }
 
     #[test]
-    fn test_generate_plist_contains_log_paths() {
-        let plist = generate_plist("/usr/local/bin/kabu", "/home/user/logs");
-        assert!(plist.contains("/home/user/logs/kekekabu.log"));
-        assert!(plist.contains("/home/user/logs/kekekabu.err"));
+    fn test_generate_plist_execute() {
+        let plist = generate_plist_execute("/usr/local/bin/kabu", "/tmp/logs");
+        assert!(plist.contains("/usr/local/bin/kabu"));
+        assert!(plist.contains(LABEL_EXECUTE));
+        assert!(plist.contains("<string>execute</string>"));
+        assert!(plist.contains("<string>--live</string>"));
+        assert!(plist.contains("<integer>14</integer>"));
+        assert!(plist.contains("<integer>50</integer>"));
+        assert!(plist.contains("/tmp/logs/kekekabu-execute.log"));
     }
 
     #[test]
     fn test_generate_plist_valid_xml_structure() {
-        let plist = generate_plist("/bin/kabu", "/tmp");
+        let plist = generate_plist_pipeline("/bin/kabu", "/tmp");
         assert!(plist.starts_with("<?xml version=\"1.0\""));
         assert!(plist.contains("<plist version=\"1.0\">"));
         assert!(plist.contains("</plist>"));
     }
 
     #[test]
-    fn test_install_writes_plist_via_runtime() {
+    fn test_install_writes_both_plists() {
         let rt = MockRuntime::new("/usr/local/bin/kabu").with_command_output("501\n", true);
         install(&rt).unwrap();
 
         let written = rt.written_files.borrow();
-        assert_eq!(written.len(), 1);
-        assert!(written[0].0.to_string_lossy().contains(PLIST_FILENAME));
-        assert!(written[0].1.contains("/usr/local/bin/kabu"));
-        assert!(written[0].1.contains(LABEL));
+        assert_eq!(written.len(), 2);
+        assert!(
+            written[0]
+                .0
+                .to_string_lossy()
+                .contains(PLIST_FILENAME_PIPELINE)
+        );
+        assert!(
+            written[1]
+                .0
+                .to_string_lossy()
+                .contains(PLIST_FILENAME_EXECUTE)
+        );
     }
 
     #[test]
-    fn test_uninstall_removes_plist_via_runtime() {
-        let plist = plist_path().unwrap();
+    fn test_uninstall_removes_both_plists() {
+        let pipeline = plist_path_pipeline().unwrap();
+        let execute = plist_path_execute().unwrap();
         let rt = MockRuntime::new("/usr/local/bin/kabu")
-            .with_existing_file(&plist.to_string_lossy())
+            .with_existing_file(&pipeline.to_string_lossy())
+            .with_existing_file(&execute.to_string_lossy())
             .with_command_output("501\n", true) // uid
-            .with_command_output("", true); // bootout
+            .with_command_output("", true) // bootout pipeline
+            .with_command_output("", true); // bootout execute
         uninstall(&rt).unwrap();
 
         let removed = rt.removed_files.borrow();
-        assert_eq!(removed.len(), 1);
-        assert!(removed[0].to_string_lossy().contains(PLIST_FILENAME));
+        assert_eq!(removed.len(), 2);
     }
 
     #[test]
     fn test_uninstall_not_installed() {
-        let rt = MockRuntime::new("/usr/local/bin/kabu");
-        // No existing files, should just print message
+        let rt = MockRuntime::new("/usr/local/bin/kabu").with_command_output("501\n", true); // uid
         uninstall(&rt).unwrap();
         assert!(rt.removed_files.borrow().is_empty());
     }

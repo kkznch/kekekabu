@@ -995,7 +995,8 @@ impl DbClient for SqliteClient {
     }
 
     async fn get_latest_evaluations_for_today(&self) -> Result<Vec<Evaluation>> {
-        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        // DB stores evaluated_at as CURRENT_TIMESTAMP (UTC), so use UTC for comparison
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
         self.conn
             .call(move |conn| {
                 let mut stmt = conn.prepare(

@@ -278,7 +278,18 @@ pub async fn run(
 
     // ── Phase 6: Place orders (non-dry-run only) ──
     let max_position_size = spec.execution_max_position_size();
-    let initial_cash = spec.budget_initial_cash();
+    // Use broker-synced cash_available for max exposure check (kabu sync required)
+    let cash_available: Option<f64> = match conn.get_latest_balance().await? {
+        Some(b) => b.cash_available.parse().ok(),
+        None => {
+            if max_position_size.is_some() {
+                warn!(
+                    "No broker balance synced; max_position_size check disabled. Run `kabu sync` first."
+                );
+            }
+            None
+        }
+    };
     if !dry_run && !signals.is_empty() {
         let client = broker
             .as_mut()
@@ -314,9 +325,9 @@ pub async fn run(
                 "100".to_string()
             };
 
-            // Max position size check for buy orders
+            // Max position size check for buy orders (uses broker-synced cash_available)
             if sig.side == Side::Buy
-                && let (Some(max_size), Some(cash)) = (max_position_size, initial_cash)
+                && let (Some(max_size), Some(cash)) = (max_position_size, cash_available)
             {
                 let order_value = last_close * quantity.parse::<f64>().unwrap_or(100.0);
                 let max_allowed = cash * max_size;

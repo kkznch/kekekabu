@@ -1,6 +1,6 @@
 ## Purpose
 
-LLM 判断に依存しないルールベースの強制損切り機構。投資 Spec の `[execution].stop_loss` 閾値を超える損失ポジションを自動で成行売りし、`[execution].max_position_size` を超える買い注文を拒否する。execute コマンドの安全機構として circuit breaker と並列して機能する。
+LLM 判断に依存しないルールベースの強制損切り機構。投資 Spec の `[execution].stop_loss` 閾値を超える損失ポジションを自動で成行売りし、`[execution].max_position_size` × 立花証券同期済み実残高 を超える買い注文を拒否する。execute コマンドの安全機構として circuit breaker と並列して機能する。
 
 ## Requirements
 
@@ -24,15 +24,19 @@ LLM 判断に依存しないルールベースの強制損切り機構。投資 
 - **THEN** Buy シグナルを `blocked_by_stop_loss` として無効化する
 
 ### Requirement: 最大ポジションサイズによる買い注文制限
-システムは SHALL 買い注文の金額が投資 Spec の `[execution].max_position_size` × `[budget].initial_cash` を超える場合、注文を reject する。
+システムは SHALL 買い注文の金額が投資 Spec の `[execution].max_position_size` × 立花証券から同期した実残高（`account_balance.cash_available` の最新値）を超える場合、注文を reject する。
 
 #### Scenario: max_position_size を超える買い注文
-- **WHEN** 買い注文金額（`last_close × quantity`）が `initial_cash × max_position_size` を超える場合
+- **WHEN** 買い注文金額（`last_close × quantity`）が `cash_available × max_position_size` を超える場合
 - **THEN** 注文を reject し、`order_results` に `rejected: exceeds max position size` として記録する
 
-#### Scenario: max_position_size または initial_cash が未定義
-- **WHEN** spec に `max_position_size` または `initial_cash` が定義されていない場合
+#### Scenario: max_position_size が未定義
+- **WHEN** spec に `[execution].max_position_size` が定義されていない場合
 - **THEN** 最大ポジションサイズチェックをスキップする
+
+#### Scenario: 残高未同期での execute --live
+- **WHEN** `account_balance` テーブルが空の状態で `execute --live` を実行した場合
+- **THEN** max_position_size チェックを警告ログのみでスキップし、注文は通常通り処理する（ただし `kabu sync` の実行を促す）
 
 ### Requirement: InvestmentSpec の execution パラメータアクセサ
 システムは SHALL `InvestmentSpec` に `execution_stop_loss()` と `execution_max_position_size()` メソッドを提供し、spec TOML の `[execution]` セクションから数値を読み取る。

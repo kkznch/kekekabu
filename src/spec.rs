@@ -76,14 +76,6 @@ impl InvestmentSpec {
         )
     }
 
-    pub fn budget_initial_cash(&self) -> Option<f64> {
-        self.table
-            .get("budget")
-            .and_then(|v| v.as_table())
-            .and_then(|t| t.get("initial_cash"))
-            .and_then(|v| v.as_float().or_else(|| v.as_integer().map(|i| i as f64)))
-    }
-
     /// Returns `[execution].stop_loss` (e.g. -0.07 for -7%).
     pub fn execution_stop_loss(&self) -> Option<f64> {
         self.execution_float("stop_loss")
@@ -103,22 +95,13 @@ impl InvestmentSpec {
     }
 }
 
-pub fn build_budget_context(
-    initial_cash: f64,
-    total_invested: f64,
-    total_recovered: f64,
-    position_count: usize,
-) -> String {
-    let remaining = initial_cash - total_invested + total_recovered;
+pub fn build_budget_context(cash_available: f64, position_count: usize, synced_at: &str) -> String {
     format!(
         "## Budget Context\n\n\
-         - Initial Cash: {initial_cash:.0} JPY\n\
-         - Invested: {total_invested:.0} JPY\n\
-         - Recovered: {total_recovered:.0} JPY\n\
-         - Remaining: {remaining:.0} JPY\n\
+         - Cash Available: {cash_available:.0} JPY (broker-synced at {synced_at})\n\
          - Active Positions: {position_count}\n\
          \n\
-         Consider the remaining budget when selecting candidates. \
+         Consider the available cash when selecting candidates. \
          Japanese stocks trade in 100-share units (単元株), \
          so each position requires at least (stock price × 100) JPY."
     )
@@ -183,47 +166,11 @@ min_market_cap = 50000000000.0
     }
 
     #[test]
-    fn test_budget_initial_cash_present() {
-        let raw = "name = \"Test\"\n[budget]\ninitial_cash = 300000\n";
-        let table: toml::Table = toml::from_str(raw).unwrap();
-        let spec = InvestmentSpec {
-            name: "Test".to_string(),
-            raw_content: raw.to_string(),
-            table,
-        };
-        assert_eq!(spec.budget_initial_cash(), Some(300000.0));
-    }
-
-    #[test]
-    fn test_budget_initial_cash_float() {
-        let raw = "name = \"Test\"\n[budget]\ninitial_cash = 300000.0\n";
-        let table: toml::Table = toml::from_str(raw).unwrap();
-        let spec = InvestmentSpec {
-            name: "Test".to_string(),
-            raw_content: raw.to_string(),
-            table,
-        };
-        assert_eq!(spec.budget_initial_cash(), Some(300000.0));
-    }
-
-    #[test]
-    fn test_budget_initial_cash_absent() {
-        let raw = "name = \"Test\"\n[execution]\nstop_loss = -0.07\n";
-        let table: toml::Table = toml::from_str(raw).unwrap();
-        let spec = InvestmentSpec {
-            name: "Test".to_string(),
-            raw_content: raw.to_string(),
-            table,
-        };
-        assert_eq!(spec.budget_initial_cash(), None);
-    }
-
-    #[test]
     fn test_build_budget_context() {
-        let ctx = build_budget_context(300000.0, 120000.0, 30000.0, 2);
-        assert!(ctx.contains("Initial Cash: 300000 JPY"));
-        assert!(ctx.contains("Remaining: 210000 JPY"));
+        let ctx = build_budget_context(210000.0, 2, "2026-04-29 10:00:00");
+        assert!(ctx.contains("Cash Available: 210000 JPY"));
         assert!(ctx.contains("Active Positions: 2"));
+        assert!(ctx.contains("2026-04-29 10:00:00"));
     }
 
     #[test]

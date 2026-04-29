@@ -88,21 +88,20 @@ pub async fn run(
     };
     let spec_section = loaded_spec.as_ref().map(|s| s.to_prompt_section());
     let spec_hash_val = spec::spec_hash(&config.spec.path).ok();
-    let budget_initial_cash = loaded_spec.as_ref().and_then(|s| s.budget_initial_cash());
 
-    // Build budget context if initial_cash is configured
-    let budget_context = if let Some(initial_cash) = budget_initial_cash {
-        let cash_summary = conn.trade_cash_summary().await?;
-        let positions = conn.list_positions().await?;
-        Some(spec::build_budget_context(
-            initial_cash,
-            cash_summary.total_invested,
-            cash_summary.total_recovered,
-            positions.len(),
-        ))
-    } else {
-        None
-    };
+    // Build budget context from broker-synced balance (kabu sync required)
+    let balance = conn.get_latest_balance().await?.ok_or_else(|| {
+        anyhow::anyhow!(
+            "No broker balance synced. Run `kabu sync` first to fetch the actual cash balance."
+        )
+    })?;
+    let cash_available: f64 = balance.cash_available.parse().unwrap_or(0.0);
+    let positions = conn.list_positions().await?;
+    let budget_context = Some(spec::build_budget_context(
+        cash_available,
+        positions.len(),
+        &balance.synced_at,
+    ));
 
     let mut results = Vec::new();
 

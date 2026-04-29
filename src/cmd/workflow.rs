@@ -295,23 +295,22 @@ async fn step_eval(
     };
     let spec_section = loaded_spec.as_ref().map(|s| s.to_prompt_section());
     let spec_hash_val = spec::spec_hash(&config.spec.path).ok();
-    let budget_initial_cash = loaded_spec.as_ref().and_then(|s| s.budget_initial_cash());
     let positions = conn.list_positions().await?;
     let held_tickers: std::collections::HashSet<String> =
         positions.iter().map(|p| p.ticker.clone()).collect();
 
-    let budget_context = match budget_initial_cash {
-        Some(initial_cash) => {
-            let cash_summary = conn.trade_cash_summary().await?;
-            Some(spec::build_budget_context(
-                initial_cash,
-                cash_summary.total_invested,
-                cash_summary.total_recovered,
-                positions.len(),
-            ))
-        }
-        None => None,
-    };
+    // Build budget context from broker-synced balance (kabu sync required)
+    let balance = conn.get_latest_balance().await?.ok_or_else(|| {
+        anyhow::anyhow!(
+            "No broker balance synced. Run `kabu sync` first to fetch the actual cash balance."
+        )
+    })?;
+    let cash_available: f64 = balance.cash_available.parse().unwrap_or(0.0);
+    let budget_context = Some(spec::build_budget_context(
+        cash_available,
+        positions.len(),
+        &balance.synced_at,
+    ));
 
     info!("Workflow: running eval step");
 

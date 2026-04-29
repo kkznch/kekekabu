@@ -103,8 +103,6 @@ name = "Test"
 [execution]
 stop_loss = -0.07
 max_position_size = 0.05
-[budget]
-initial_cash = 300000
 "#,
     );
 
@@ -340,10 +338,11 @@ async fn test_max_position_size_rejects_oversized_buy() -> Result<()> {
 name = "Test"
 [execution]
 max_position_size = 0.05
-[budget]
-initial_cash = 300000
 "#,
     );
+
+    // Broker-synced cash: 300,000 JPY
+    db.save_balance_snapshot("300000").await?;
 
     // Stock price 5000 × 100 shares = 500,000 > 300,000 × 0.05 = 15,000
     let stock_id = db.save_stock("7203", "Toyota", Some("Auto")).await?;
@@ -376,10 +375,11 @@ async fn test_max_position_size_allows_small_buy() -> Result<()> {
 name = "Test"
 [execution]
 max_position_size = 0.5
-[budget]
-initial_cash = 1000000
 "#,
     );
+
+    // Broker-synced cash: 1,000,000 JPY
+    db.save_balance_snapshot("1000000").await?;
 
     // Stock price 100 × 100 shares = 10,000 < 1,000,000 × 0.5 = 500,000
     let stock_id = db.save_stock("7203", "Toyota", Some("Auto")).await?;

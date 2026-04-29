@@ -204,9 +204,6 @@ cargo run -- config validate
 name = "JP Core Value & Quality"
 version = "1.0.0"
 
-[budget]
-initial_cash = 300_000                # 初期投資資金（円）
-
 [universe.liquidity]
 min_avg_daily_volume_3m = 500_000_000  # 5億円
 min_market_cap = 30_000_000_000        # 300億円
@@ -238,7 +235,7 @@ trailing_stop = 0.15
 ```
 
 - `name`（必須）: 戦略名。ログ表示や識別に使用
-- `[budget]` セクションの `initial_cash`（任意）: 初期投資資金（円）。設定すると `discover` / `eval` のプロンプトに残り投資可能額が注入され、予算を考慮した判断が可能に
+- 残予算（実残高）は `kabu sync` で立花証券口座から取得した値を使用するため、Spec への記述は不要
 - それ以外のセクション・キーは自由に定義可能
 - TOML ファイル全体がそのまま LLM に渡されるため、コメントも LLM への指示として機能します
 
@@ -400,7 +397,7 @@ kabu db migrate
 ## 安全機構
 
 - **ハードストップロス**: 投資 Spec の `stop_loss` 閾値を超える損失ポジションを LLM 判断に関わらず成行で強制売り
-- **最大エクスポージャー**: `max_position_size × initial_cash` を超える買い注文を自動 reject
+- **最大エクスポージャー**: `max_position_size × 同期済み実残高` を超える買い注文を自動 reject（`kabu sync` で更新）
 - **サーキットブレーカー**: 個別銘柄 >30% 変動、またはウォッチリストの >50% が >5% 下落した場合に execute をブロック
 - **明示的実行モード**: `execute` は `--dry-run` か `--live` の明示が必須（フラグなしはヘルプ表示）
 - **注文べき等性**: `request_id`（日付+銘柄+売買方向+評価ID）の UNIQUE 制約で同一評価からの重複発注を防止

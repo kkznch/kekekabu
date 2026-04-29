@@ -76,6 +76,16 @@ impl BrokerClient for MockBrokerClient {
         anyhow::bail!("mock: no orders to query")
     }
 
+    async fn query_balance(&self) -> Result<order::BrokerBalance> {
+        Ok(order::BrokerBalance {
+            cash_available: "0".to_string(),
+        })
+    }
+
+    async fn query_positions(&self) -> Result<Vec<order::BrokerPosition>> {
+        Ok(Vec::new())
+    }
+
     async fn logout(&mut self) -> Result<()> {
         Ok(())
     }

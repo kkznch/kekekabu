@@ -45,6 +45,8 @@ pub trait BrokerClient: Send + Sync {
         second_password: &str,
     ) -> Result<order::NewOrderResult>;
     async fn query_order(&self, order_number: &str) -> Result<order::OrderDetail>;
+    async fn query_balance(&self) -> Result<order::BrokerBalance>;
+    async fn query_positions(&self) -> Result<Vec<order::BrokerPosition>>;
     async fn logout(&mut self) -> Result<()>;
 }
 
@@ -207,6 +209,20 @@ impl TachibanaClient {
         order::parse_order_detail_value(&value)
     }
 
+    /// Query buying power (cash available for new orders).
+    pub async fn query_balance(&self) -> Result<order::BrokerBalance> {
+        let json = order::build_balance_query_json();
+        let value = self.send_request_raw(&json).await?;
+        order::parse_balance_value(&value)
+    }
+
+    /// Query current spot stock holdings.
+    pub async fn query_positions(&self) -> Result<Vec<order::BrokerPosition>> {
+        let json = order::build_positions_query_json();
+        let value = self.send_request_raw(&json).await?;
+        order::parse_positions_value(&value)
+    }
+
     /// Log out (invalidate virtual URLs).
     pub async fn logout(&mut self) -> Result<()> {
         if let Some(session) = &self.session {
@@ -256,6 +272,14 @@ impl BrokerClient for TachibanaClient {
 
     async fn query_order(&self, order_number: &str) -> Result<order::OrderDetail> {
         TachibanaClient::query_order(self, order_number).await
+    }
+
+    async fn query_balance(&self) -> Result<order::BrokerBalance> {
+        TachibanaClient::query_balance(self).await
+    }
+
+    async fn query_positions(&self) -> Result<Vec<order::BrokerPosition>> {
+        TachibanaClient::query_positions(self).await
     }
 
     async fn logout(&mut self) -> Result<()> {

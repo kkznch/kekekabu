@@ -1,7 +1,16 @@
 use anyhow::Result;
+use serde::Serialize;
 
 use crate::db::DbClient;
 use crate::output::{self, OutputFormat};
+use crate::portfolio::PortfolioSummary;
+
+#[derive(Debug, Serialize)]
+pub struct ExtendedSummary {
+    pub portfolio: PortfolioSummary,
+    pub broker_cash_available: Option<String>,
+    pub last_synced: Option<String>,
+}
 
 pub async fn watchlist(conn: &dyn DbClient, format: OutputFormat) -> Result<()> {
     let items = conn.watchlist_list().await?;
@@ -40,8 +49,14 @@ pub async fn tables(conn: &dyn DbClient, format: OutputFormat) -> Result<()> {
 }
 
 pub async fn summary(conn: &dyn DbClient, format: OutputFormat) -> Result<()> {
-    let sum = conn.portfolio_summary().await?;
-    output::print_output(&sum, format);
+    let portfolio = conn.portfolio_summary().await?;
+    let balance = conn.get_latest_balance().await?;
+    let result = ExtendedSummary {
+        portfolio,
+        broker_cash_available: balance.as_ref().map(|b| b.cash_available.clone()),
+        last_synced: balance.map(|b| b.synced_at),
+    };
+    output::print_output(&result, format);
     Ok(())
 }
 

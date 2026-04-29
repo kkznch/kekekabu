@@ -4,6 +4,7 @@ mod embedded {
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use rusqlite::OptionalExtension;
 use rust_decimal::Decimal;
 use std::str::FromStr;
 use tokio_rusqlite::Connection;
@@ -63,6 +64,13 @@ pub struct FetchResult {
 pub struct TradeCashSummary {
     pub total_invested: f64,
     pub total_recovered: f64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AccountBalance {
+    pub id: i64,
+    pub cash_available: String,
+    pub synced_at: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -294,6 +302,19 @@ pub trait DbClient: Send + Sync {
     async fn list_orders(&self, limit: i64, status: Option<&str>) -> Result<Vec<Order>>;
     async fn order_exists_for_evaluation(&self, evaluation_id: i64, side: &str) -> Result<bool>;
     async fn update_order_and_record_fill(&self, params: FillParams) -> Result<()>;
+
+    // Account balance
+    async fn save_balance_snapshot(&self, cash_available: &str) -> Result<i64>;
+    async fn get_latest_balance(&self) -> Result<Option<AccountBalance>>;
+
+    // Position reconciliation (used by sync --fix)
+    async fn set_position_quantity(
+        &self,
+        ticker: &str,
+        quantity: Decimal,
+        avg_cost: Decimal,
+    ) -> Result<()>;
+    async fn delete_position(&self, ticker: &str) -> Result<()>;
 
     // Table stats
     async fn table_stats(&self) -> Result<Vec<TableStat>>;
@@ -1537,6 +1558,101 @@ impl DbClient for SqliteClient {
             .context("Failed to update order and record fill")
     }
 
+    // -- Account balance --
+
+    async fn save_balance_snapshot(&self, cash_available: &str) -> Result<i64> {
+        let cash_available = cash_available.to_string();
+        self.conn
+            .call(move |conn| {
+                conn.execute(
+                    "INSERT INTO account_balance (cash_available) VALUES (?1)",
+                    rusqlite::params![cash_available],
+                )?;
+                Ok::<i64, rusqlite::Error>(conn.last_insert_rowid())
+            })
+            .await
+            .context("Failed to save account balance snapshot")
+    }
+
+    async fn get_latest_balance(&self) -> Result<Option<AccountBalance>> {
+        self.conn
+            .call(|conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT id, cash_available, synced_at
+                     FROM account_balance
+                     ORDER BY synced_at DESC, id DESC
+                     LIMIT 1",
+                )?;
+                let result = stmt
+                    .query_row([], |row| {
+                        Ok(AccountBalance {
+                            id: row.get(0)?,
+                            cash_available: row.get(1)?,
+                            synced_at: row.get(2)?,
+                        })
+                    })
+                    .optional()?;
+                Ok::<Option<AccountBalance>, rusqlite::Error>(result)
+            })
+            .await
+            .context("Failed to get latest account balance")
+    }
+
+    // -- Position reconciliation --
+
+    async fn set_position_quantity(
+        &self,
+        ticker: &str,
+        quantity: Decimal,
+        avg_cost: Decimal,
+    ) -> Result<()> {
+        let ticker = ticker.to_string();
+        let quantity_str = quantity.to_string();
+        let avg_cost_str = avg_cost.to_string();
+        self.conn
+            .call(move |conn| {
+                let tx = conn.transaction()?;
+                tx.execute(
+                    "INSERT OR IGNORE INTO stocks (ticker, name, market) VALUES (?1, ?1, 'jp')",
+                    rusqlite::params![ticker],
+                )?;
+                let stock_id: i64 = tx.query_row(
+                    "SELECT id FROM stocks WHERE ticker = ?1",
+                    rusqlite::params![ticker],
+                    |row| row.get(0),
+                )?;
+                let total_invested = (quantity * avg_cost).to_string();
+                tx.execute(
+                    "INSERT INTO portfolio_positions (stock_id, quantity, avg_cost, total_invested, is_active)
+                     VALUES (?1, ?2, ?3, ?4, 1)
+                     ON CONFLICT(stock_id) DO UPDATE SET
+                         quantity = excluded.quantity,
+                         is_active = 1,
+                         updated_at = datetime('now')",
+                    rusqlite::params![stock_id, quantity_str, avg_cost_str, total_invested],
+                )?;
+                tx.commit()?;
+                Ok::<(), rusqlite::Error>(())
+            })
+            .await
+            .context("Failed to set position quantity")
+    }
+
+    async fn delete_position(&self, ticker: &str) -> Result<()> {
+        let ticker = ticker.to_string();
+        self.conn
+            .call(move |conn| {
+                conn.execute(
+                    "DELETE FROM portfolio_positions
+                     WHERE stock_id = (SELECT id FROM stocks WHERE ticker = ?1)",
+                    rusqlite::params![ticker],
+                )?;
+                Ok::<(), rusqlite::Error>(())
+            })
+            .await
+            .context("Failed to delete position")
+    }
+
     // -- Table stats --
 
     async fn table_stats(&self) -> Result<Vec<TableStat>> {
@@ -1553,6 +1669,7 @@ impl DbClient for SqliteClient {
                     "watchlist_events",
                     "llm_logs",
                     "orders",
+                    "account_balance",
                 ];
                 let mut stats = Vec::new();
                 for table in tables {

@@ -429,7 +429,7 @@ async fn test_table_stats() -> Result<()> {
     db.watchlist_add("7203", None).await?;
 
     let stats = db.table_stats().await?;
-    assert_eq!(stats.len(), 10);
+    assert_eq!(stats.len(), 11);
 
     let stocks_stat = stats.iter().find(|s| s.table_name == "stocks").unwrap();
     assert_eq!(stocks_stat.row_count, 1);

@@ -168,6 +168,64 @@ impl HumanDisplay for crate::cmd::execute::ExecuteResult {
     }
 }
 
+impl HumanDisplay for crate::cmd::show::ExtendedSummary {
+    fn print_human(&self) {
+        let p = &self.portfolio;
+        println!("Positions: {}", p.position_count);
+        println!("Invested:  {}", p.total_invested);
+        println!("Value:     {}", p.total_current_value);
+        println!("P&L:       {}", p.total_unrealized_pnl);
+        if let Some(pct) = p.total_unrealized_pnl_pct {
+            println!("P&L %:     {}%", pct);
+        }
+        println!();
+        match &self.broker_cash_available {
+            Some(cash) => {
+                println!(
+                    "Cash Available: {} JPY (synced at {})",
+                    cash,
+                    self.last_synced.as_deref().unwrap_or("unknown")
+                );
+            }
+            None => {
+                println!("Cash Available: not synced (run `kabu sync`)");
+            }
+        }
+    }
+}
+
+impl HumanDisplay for crate::cmd::sync::SyncResult {
+    fn print_human(&self) {
+        println!("=== Account Sync ===");
+        println!("Cash Available: {} JPY", self.cash_available);
+        println!(
+            "Positions: broker={}, db={}",
+            self.broker_position_count, self.db_position_count
+        );
+        if self.mismatches.is_empty() {
+            println!("No mismatches detected.");
+        } else {
+            println!("\nMismatches ({}):", self.mismatches.len());
+            for m in &self.mismatches {
+                let kind = match m.kind {
+                    crate::cmd::sync::MismatchKind::DbOnly => "DB-only",
+                    crate::cmd::sync::MismatchKind::BrokerOnly => "Broker-only",
+                    crate::cmd::sync::MismatchKind::QuantityDiff => "Qty diff",
+                };
+                println!(
+                    "  [{}] {:<10} db={} broker={}",
+                    kind, m.ticker, m.db_quantity, m.broker_quantity
+                );
+            }
+            if self.fixed {
+                println!("\n✓ Applied --fix: DB has been updated to match broker.");
+            } else {
+                println!("\nRun with --fix to apply changes to DB.");
+            }
+        }
+    }
+}
+
 impl HumanDisplay for crate::db::Order {
     fn print_human(&self) {
         let eval_id = self

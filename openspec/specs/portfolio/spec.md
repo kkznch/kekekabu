@@ -61,3 +61,14 @@
 #### Scenario: 売り総額の集計
 - **WHEN** 複数の売り取引が存在する場合
 - **THEN** 各取引の price * quantity を Decimal で乗算・加算し、f64 に変換して返す
+
+### Requirement: show summary に実残高セクションを追加
+システムは SHALL `kabu show summary` の出力に、立花証券口座から最後に同期した実残高（`account_balance` の最新スナップショット）を表示する。
+
+#### Scenario: 同期済みの場合の表示
+- **WHEN** `account_balance` テーブルにレコードがある状態で `kabu show summary` を実行した場合
+- **THEN** 「Cash Available」（実残高）と同期日時（synced_at）を併記して表示する
+
+#### Scenario: 未同期の場合の表示
+- **WHEN** `account_balance` テーブルが空の状態で `kabu show summary` を実行した場合
+- **THEN** 「Cash Available: not synced (run `kabu sync`)」と表示する

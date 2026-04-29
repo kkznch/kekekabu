@@ -23,7 +23,7 @@ src/
   notification.rs    Notifier trait (platform-agnostic notification abstraction)
   spec.rs            Investment Spec TOML loader + SHA256 hashing + execution params
   db/
-    mod.rs           SQLite operations (10 tables)
+    mod.rs           SQLite operations (11 tables)
     schema.rs        Table definitions
   tachibana/
     mod.rs           BrokerClient trait + Tachibana Securities e-Shiten API client
@@ -42,6 +42,7 @@ src/
     eval.rs          LLM investment evaluation (Hunting: Buy/Avoid, Farming: Hold/Sell) + history injection
     execute.rs       Trade execution (settle + circuit breaker + hard stop-loss + max exposure + orders via Tachibana API)
     watch.rs         WebSocket persistent fill notification receiver
+    sync.rs          Account reconciliation (broker balance + positions vs DB)
     report.rs        Markdown report generation
     show.rs          DB viewer (watchlist, events, positions, evaluations, stocks, tables, summary, trades, orders)
     config.rs        Config init + validate handlers
@@ -74,6 +75,8 @@ kabu eval                            # LLM evaluation (Hunting + Farming)
 kabu execute --dry-run               # Execute trades (simulation)
 kabu execute --live                  # Execute trades (real: Tachibana API)
 kabu watch                           # WebSocket persistent fill receiver
+kabu sync                            # Reconcile DB with broker (read-only)
+kabu sync --fix                      # Apply broker positions to DB
 kabu report -o report.md
 
 # Demo environment (separate DB + demo API endpoint)
@@ -161,7 +164,7 @@ Environment variables override config: `JQUANTS_API_KEY`, `ANTHROPIC_API_KEY`.
 Tachibana config (`[tachibana]` section): `user_id`, `password`, `second_password`, `event_timeout_secs`.
 Env overrides: `TACHIBANA_USER_ID`, `TACHIBANA_PASSWORD`, `TACHIBANA_SECOND_PASSWORD`.
 
-## DB Tables (10)
+## DB Tables (11)
 
 1. `stocks` — ticker master
 2. `prices` — daily OHLCV
@@ -173,3 +176,4 @@ Env overrides: `TACHIBANA_USER_ID`, `TACHIBANA_PASSWORD`, `TACHIBANA_SECOND_PASS
 8. `trades` — trade history (with P&L)
 9. `llm_logs` — LLM call logs (prompt, response, backend, model)
 10. `orders` — broker orders (Tachibana, with request_id idempotency)
+11. `account_balance` — broker balance snapshots (managed by sync)

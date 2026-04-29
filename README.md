@@ -274,6 +274,8 @@ kabu eval
 kabu execute --dry-run               # シミュレーション
 kabu execute --live                  # 本番発注（立花証券 API）
 kabu watch                           # WebSocket 常駐（約定通知を即時 DB 反映）
+kabu sync                            # 証券口座と DB を突合（読み取り専用）
+kabu sync --fix                      # 不整合を DB に反映（quantity を broker に合わせる）
 kabu report -o report.md
 
 # デモ環境（--demo で API エンドポイントと DB を分離）
@@ -407,3 +409,4 @@ kabu db migrate
 - **売却時 watchlist 自動除外**: ポジション全量売却時に watchlist から自動除外し、再評価ループを防止
 - **明示的 DB 初期化**: `kabu db migrate` でのみ DB を作成。暗黙の自動作成を排除
 - **デモ環境分離**: `--demo` フラグで API エンドポイントと DB を完全分離。デモデータが本番に混入しない
+- **口座リコンシリエーション**: `kabu sync` で証券口座の実残高・実建玉を取得し、DB との不整合を検出。`--fix` で自動補正可能

@@ -75,6 +75,12 @@ enum Command {
     Service(ServiceCommand),
     /// Watch for fill notifications via Tachibana WebSocket (long-running)
     Watch,
+    /// Sync DB with Tachibana account (balance + positions reconciliation)
+    Sync {
+        /// Apply changes to DB to match broker positions (default: read-only)
+        #[arg(long)]
+        fix: bool,
+    },
     /// Run the full pipeline as a single process with per-stock error isolation
     #[command(subcommand)]
     Workflow(WorkflowCommand),
@@ -279,6 +285,21 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    // sync subcommand — reconcile with broker account
+    if let Command::Sync { fix } = cli.command {
+        let tc_config = config.tachibana.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "[tachibana] config is required for sync. \
+                 Set it in ~/.config/kabu/config.toml or use TACHIBANA_* env vars."
+            )
+        })?;
+        let mut broker = tachibana::TachibanaClient::new(tc_config);
+        let broker_ref: &mut dyn tachibana::BrokerClient = &mut broker;
+        let result = cmd::sync::run(&db, broker_ref, fix).await?;
+        output::print_output(&result, cli.format);
+        return Ok(());
+    }
+
     // workflow subcommand — single-process pipeline
     if let Command::Workflow(sub) = cli.command {
         match sub {
@@ -299,6 +320,7 @@ async fn main() -> Result<()> {
         | Command::Db(_)
         | Command::Service(_)
         | Command::Watch
+        | Command::Sync { .. }
         | Command::Workflow(_) => {
             unreachable!()
         }

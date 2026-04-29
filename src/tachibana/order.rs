@@ -136,6 +136,90 @@ pub fn parse_order_detail_value(value: &serde_json::Value) -> Result<OrderDetail
     })
 }
 
+// ─── Account / Position queries ───────────────────────────────────────
+
+/// Account buying power (cash available for new orders).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BrokerBalance {
+    /// Spot stock buying power in JPY (`sSummaryGenkabuKaituke`).
+    pub cash_available: String,
+}
+
+/// A single spot stock holding from the broker.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BrokerPosition {
+    pub ticker: String,
+    pub quantity: i64,
+    pub avg_cost: String,
+}
+
+/// Build CLMZanKaiKanougaku request JSON.
+pub fn build_balance_query_json() -> serde_json::Value {
+    serde_json::json!({
+        "sCLMID": "CLMZanKaiKanougaku",
+        "p_no": request::next_p_no(),
+        "p_sd_date": request::p_sd_date(),
+    })
+}
+
+/// Build CLMGenbutuKabuList request JSON.
+pub fn build_positions_query_json() -> serde_json::Value {
+    serde_json::json!({
+        "sCLMID": "CLMGenbutuKabuList",
+        "sIssueCode": "",
+        "p_no": request::next_p_no(),
+        "p_sd_date": request::p_sd_date(),
+    })
+}
+
+/// Parse CLMZanKaiKanougaku response from a raw body string.
+pub fn parse_balance_response(body: &str) -> Result<BrokerBalance> {
+    let value = request::parse_response(body)?;
+    parse_balance_value(&value)
+}
+
+pub fn parse_balance_value(value: &serde_json::Value) -> Result<BrokerBalance> {
+    request::check_response_errors(value)?;
+    let cash_available = json_str(value, "sSummaryGenkabuKaituke")
+        .context("Missing sSummaryGenkabuKaituke in balance response")?;
+    Ok(BrokerBalance { cash_available })
+}
+
+/// Parse CLMGenbutuKabuList response from a raw body string.
+pub fn parse_positions_response(body: &str) -> Result<Vec<BrokerPosition>> {
+    let value = request::parse_response(body)?;
+    parse_positions_value(&value)
+}
+
+pub fn parse_positions_value(value: &serde_json::Value) -> Result<Vec<BrokerPosition>> {
+    request::check_response_errors(value)?;
+
+    // aGenbutuKabuList may be `""` (string) when empty, or an array of items.
+    let list = match value.get("aGenbutuKabuList") {
+        Some(serde_json::Value::Array(arr)) => arr,
+        Some(serde_json::Value::String(s)) if s.is_empty() => return Ok(Vec::new()),
+        Some(_) => return Ok(Vec::new()),
+        None => return Ok(Vec::new()),
+    };
+
+    let mut positions = Vec::with_capacity(list.len());
+    for item in list {
+        let ticker = json_str(item, "sUriOrderIssueCode").unwrap_or_default();
+        if ticker.is_empty() {
+            continue;
+        }
+        let quantity_str = json_str(item, "sUriOrderZanKabuSuryou").unwrap_or_default();
+        let quantity: i64 = quantity_str.parse().unwrap_or(0);
+        let avg_cost = json_str(item, "sUriOrderGaisanBokaTanka").unwrap_or_default();
+        positions.push(BrokerPosition {
+            ticker,
+            quantity,
+            avg_cost,
+        });
+    }
+    Ok(positions)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -212,5 +296,75 @@ mod tests {
         assert_eq!(json["sCLMID"], "CLMOrderListDetail");
         assert_eq!(json["sOrderNumber"], "ORD001");
         assert_eq!(json["sEigyouDay"], "20260313");
+    }
+
+    #[test]
+    fn test_build_balance_query_json() {
+        let json = build_balance_query_json();
+        assert_eq!(json["sCLMID"], "CLMZanKaiKanougaku");
+    }
+
+    #[test]
+    fn test_build_positions_query_json() {
+        let json = build_positions_query_json();
+        assert_eq!(json["sCLMID"], "CLMGenbutuKabuList");
+        assert_eq!(json["sIssueCode"], "");
+    }
+
+    #[test]
+    fn test_parse_balance_response() {
+        let body = r#"{
+            "p_no":"1","p_sd_date":"2026.03.13-09:00:00.000",
+            "p_errno":"0","sResultCode":"0",
+            "sCLMID":"CLMZanKaiKanougaku",
+            "sSummaryGenkabuKaituke":"500000",
+            "sHusokukinHasseiFlg":"0"
+        }"#;
+        let balance = parse_balance_response(body).unwrap();
+        assert_eq!(balance.cash_available, "500000");
+    }
+
+    #[test]
+    fn test_parse_positions_response_with_holdings() {
+        let body = r#"{
+            "p_no":"1","p_sd_date":"2026.03.13-09:00:00.000",
+            "p_errno":"0","sResultCode":"0",
+            "sCLMID":"CLMGenbutuKabuList",
+            "aGenbutuKabuList":[
+                {"sUriOrderIssueCode":"7203","sUriOrderZanKabuSuryou":"100","sUriOrderGaisanBokaTanka":"2500"},
+                {"sUriOrderIssueCode":"6184","sUriOrderZanKabuSuryou":"200","sUriOrderGaisanBokaTanka":"466"}
+            ]
+        }"#;
+        let positions = parse_positions_response(body).unwrap();
+        assert_eq!(positions.len(), 2);
+        assert_eq!(positions[0].ticker, "7203");
+        assert_eq!(positions[0].quantity, 100);
+        assert_eq!(positions[0].avg_cost, "2500");
+        assert_eq!(positions[1].ticker, "6184");
+        assert_eq!(positions[1].quantity, 200);
+    }
+
+    #[test]
+    fn test_parse_positions_response_empty_string() {
+        // When account has no holdings, broker returns empty string instead of array
+        let body = r#"{
+            "p_no":"1","p_sd_date":"2026.03.13-09:00:00.000",
+            "p_errno":"0","sResultCode":"0",
+            "sCLMID":"CLMGenbutuKabuList",
+            "aGenbutuKabuList":""
+        }"#;
+        let positions = parse_positions_response(body).unwrap();
+        assert!(positions.is_empty());
+    }
+
+    #[test]
+    fn test_parse_positions_response_missing_field() {
+        let body = r#"{
+            "p_no":"1","p_sd_date":"2026.03.13-09:00:00.000",
+            "p_errno":"0","sResultCode":"0",
+            "sCLMID":"CLMGenbutuKabuList"
+        }"#;
+        let positions = parse_positions_response(body).unwrap();
+        assert!(positions.is_empty());
     }
 }
